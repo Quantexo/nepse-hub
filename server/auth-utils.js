@@ -3,20 +3,26 @@ const bcrypt = require("bcrypt");
 
 // Generate user code in format YYYYMMDDNNN
 // Count existing users registered today, then increment
-async function generateUniqueCode(db) {
+async function generateUniqueCode(supabase) {
   const today = new Date();
   const year = today.getFullYear();
   const month = String(today.getMonth() + 1).padStart(2, "0");
   const day = String(today.getDate()).padStart(2, "0");
   const datePrefix = `${year}${month}${day}`;
 
-  // Count users registered today with this date prefix
-  const result = db
-    .prepare(`SELECT COUNT(*) as count FROM users WHERE code LIKE ?`)
-    .get(`${datePrefix}%`);
+  // Count users registered today with this date prefix in Supabase
+  const { count, error } = await supabase
+    .from("users")
+    .select("*", { count: "exact", head: true })
+    .like("code", `${datePrefix}%`);
 
-  const count = (result?.count || 0) + 1;
-  const sequentialNumber = String(count).padStart(3, "0");
+  if (error) {
+    console.error("Error generating unique code:", error);
+    throw new Error("Failed to generate unique code: " + error.message);
+  }
+
+  const userCount = (count || 0) + 1;
+  const sequentialNumber = String(userCount).padStart(3, "0");
   const code = `${datePrefix}${sequentialNumber}`;
 
   return code;
@@ -36,7 +42,7 @@ async function verifyPassword(password, hash) {
 // Generate JWT token
 function generateAccessToken(userId, code) {
   const token = jwt.sign({ userId, code }, process.env.JWT_SECRET, {
-    expiresIn: process.env.ACCESS_TOKEN_EXPIRY || "30m",
+    expiresIn: process.env.ACCESS_TOKEN_EXPIRY || "60m",
   });
   return token;
 }

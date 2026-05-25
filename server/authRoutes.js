@@ -13,7 +13,7 @@ const authMiddleware = require('./auth-middleware');
 // POST /api/auth/register - Create new user with auto-generated code
 router.post('/register', async (req, res) => {
   const { email, username, password } = req.body;
-  const db = req.app.locals.db;
+  const supabase = req.app.locals.supabase;
 
   // Validate input
   if (!email || !username || !password) {
@@ -25,29 +25,35 @@ router.post('/register', async (req, res) => {
   }
 
   try {
-    // Check if email or username already exists
-    const existingUser = db
-      .prepare('SELECT id FROM users WHERE email = ? OR username = ?')
-      .get(email, username);
+    // Check if email or username already exists in Supabase
+    const { data: existingUser, error: checkError } = await supabase
+      .from('users')
+      .select('id')
+      .or(`email.eq.${email},username.eq.${username}`)
+      .maybeSingle();
+
+    if (checkError) throw checkError;
 
     if (existingUser) {
       return res.status(400).json({ error: 'Email or username already exists' });
     }
 
     // Generate unique code
-    const code = await generateUniqueCode(db);
+    const code = await generateUniqueCode(supabase);
 
     // Hash password
     const passwordHash = await hashPassword(password);
 
-    // Insert user into database
-    const info = db
-      .prepare(
-        'INSERT INTO users (code, email, username, password_hash, created_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)'
-      )
-      .run(code, email, username, passwordHash);
+    // Insert user into Supabase
+    const { data: newUser, error: insertError } = await supabase
+      .from('users')
+      .insert([{ code, email, username, password_hash: passwordHash }])
+      .select('id')
+      .single();
 
-    const userId = info.lastInsertRowid;
+    if (insertError) throw insertError;
+
+    const userId = newUser.id;
 
     // Generate tokens
     const accessToken = generateAccessToken(userId, code);
@@ -70,7 +76,7 @@ router.post('/register', async (req, res) => {
 // POST /api/auth/login - Authenticate with code and password
 router.post('/login', async (req, res) => {
   const { code, password } = req.body;
-  const db = req.app.locals.db;
+  const supabase = req.app.locals.supabase;
 
   // Validate input
   if (!code || !password) {
@@ -78,8 +84,14 @@ router.post('/login', async (req, res) => {
   }
 
   try {
-    // Find user by code
-    const user = db.prepare('SELECT id, code, password_hash, email, username FROM users WHERE code = ?').get(code);
+    // Find user by code in Supabase
+    const { data: user, error: findError } = await supabase
+      .from('users')
+      .select('id, code, password_hash, email, username')
+      .eq('code', code)
+      .maybeSingle();
+
+    if (findError) throw findError;
 
     if (!user) {
       return res.status(401).json({ error: 'Invalid code or password' });
@@ -110,9 +122,9 @@ router.post('/login', async (req, res) => {
 });
 
 // POST /api/auth/refresh - Refresh access token using refresh token
-router.post('/refresh', (req, res) => {
+router.post('/refresh', async (req, res) => {
   const { refreshToken } = req.body;
-  const db = req.app.locals.db;
+  const supabase = req.app.locals.supabase;
 
   if (!refreshToken) {
     return res.status(400).json({ error: 'Refresh token required' });
@@ -125,7 +137,13 @@ router.post('/refresh', (req, res) => {
 
   try {
     // Get user to verify still exists
-    const user = db.prepare('SELECT id, code FROM users WHERE id = ?').get(decoded.userId);
+    const { data: user, error: findError } = await supabase
+      .from('users')
+      .select('id, code')
+      .eq('id', decoded.userId)
+      .maybeSingle();
+
+    if (findError) throw findError;
 
     if (!user) {
       return res.status(401).json({ error: 'User not found' });
@@ -152,13 +170,17 @@ router.post('/logout', authMiddleware, (req, res) => {
 });
 
 // GET /api/auth/me - Get current authenticated user info
-router.get('/me', authMiddleware, (req, res) => {
-  const db = req.app.locals.db;
+router.get('/me', authMiddleware, async (req, res) => {
+  const supabase = req.app.locals.supabase;
 
   try {
-    const user = db
-      .prepare('SELECT id, code, email, username, created_at FROM users WHERE id = ?')
-      .get(req.userId);
+    const { data: user, error: findError } = await supabase
+      .from('users')
+      .select('id, code, email, username, created_at')
+      .eq('id', req.userId)
+      .maybeSingle();
+
+    if (findError) throw findError;
 
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
