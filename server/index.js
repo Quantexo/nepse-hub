@@ -1,55 +1,21 @@
 const express = require('express');
 const cors = require('cors');
-const Database = require('better-sqlite3');
+const { createClient } = require('@supabase/supabase-js');
 const path = require('path');
 require('dotenv').config();
 
 const app = express();
-const port = 3001;
+const port = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 
-// Database Setup
-const db = new Database('nepse_hub.db');
-app.locals.db = db;
-
-// Initialize Tables
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    code TEXT UNIQUE NOT NULL,
-    email TEXT UNIQUE NOT NULL,
-    username TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE TABLE IF NOT EXISTS watchlist (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    symbol TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    UNIQUE(user_id, symbol)
-  );
-
-  CREATE TABLE IF NOT EXISTS trade_plans (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    symbol TEXT NOT NULL,
-    entry REAL,
-    sl REAL,
-    target REAL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-  );
-`);
-
-// Create index for faster code lookups
-db.prepare('CREATE INDEX IF NOT EXISTS idx_users_code ON users(code)').run();
+// Supabase Connection Setup
+const supabaseUrl = process.env.SUPABASE_URL || 'https://yzvarygeeycsbttxzusg.supabase.co';
+const supabaseKey = process.env.SUPABASE_KEY || 'sb_publishable_hKShryc4e4rFs5zbfvFubw_j2jv2gFW';
+const supabase = createClient(supabaseUrl, supabaseKey);
+app.locals.supabase = supabase;
 
 // --- Authentication Routes ---
 const authRoutes = require('./authRoutes');
@@ -59,53 +25,115 @@ app.use('/api/auth', authRoutes);
 const authMiddleware = require('./auth-middleware');
 
 // --- Watchlist Routes (Protected) ---
-app.get('/api/watchlist', authMiddleware, (req, res) => {
-    const stocks = db.prepare('SELECT id, symbol FROM watchlist WHERE user_id = ? ORDER BY created_at DESC').all(req.userId);
-    res.json(stocks.map(s => ({ id: s.id, symbol: s.symbol })));
+app.get('/api/watchlist', authMiddleware, async (req, res) => {
+    try {
+        const { data: stocks, error } = await req.app.locals.supabase
+            .from('watchlist')
+            .select('id, symbol')
+            .eq('user_id', req.userId)
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        res.json((stocks || []).map(s => ({ id: s.id, symbol: s.symbol })));
+    } catch (err) {
+        console.error('Watchlist fetch error:', err.message);
+        res.status(500).json({ error: 'Failed to fetch watchlist' });
+    }
 });
 
-app.post('/api/watchlist', authMiddleware, (req, res) => {
+app.post('/api/watchlist', authMiddleware, async (req, res) => {
     const { symbol } = req.body;
+    if (!symbol) {
+        return res.status(400).json({ error: 'Symbol is required' });
+    }
     try {
-        db.prepare('INSERT INTO watchlist (user_id, symbol) VALUES (?, ?)').run(req.userId, symbol);
+        const { data, error } = await req.app.locals.supabase
+            .from('watchlist')
+            .insert([{ user_id: req.userId, symbol }]);
+
+        if (error) throw error;
         res.status(201).json({ success: true });
     } catch (err) {
+        console.error('Watchlist post error:', err.message);
         res.status(400).json({ error: 'Already in watchlist or invalid request' });
     }
 });
 
-app.delete('/api/watchlist/:id', authMiddleware, (req, res) => {
+app.delete('/api/watchlist/:id', authMiddleware, async (req, res) => {
     const { id } = req.params;
-    const result = db.prepare('DELETE FROM watchlist WHERE id = ? AND user_id = ?').run(id, req.userId);
-    if (result.changes === 0) {
-        return res.status(404).json({ error: 'Watchlist item not found' });
+    try {
+        const { error, count } = await req.app.locals.supabase
+            .from('watchlist')
+            .delete({ count: 'exact' })
+            .eq('id', id)
+            .eq('user_id', req.userId);
+
+        if (error) throw error;
+        if (count === 0) {
+            return res.status(404).json({ error: 'Watchlist item not found' });
+        }
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Watchlist delete error:', err.message);
+        res.status(500).json({ error: 'Failed to delete watchlist item' });
     }
-    res.json({ success: true });
 });
 
 // --- Trade Plans Routes (Protected) ---
-app.get('/api/trade-plans', authMiddleware, (req, res) => {
-    const plans = db.prepare('SELECT * FROM trade_plans WHERE user_id = ? ORDER BY created_at DESC').all(req.userId);
-    res.json(plans);
+app.get('/api/trade-plans', authMiddleware, async (req, res) => {
+    try {
+        const { data: plans, error } = await req.app.locals.supabase
+            .from('trade_plans')
+            .select('*')
+            .eq('user_id', req.userId)
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        res.json(plans || []);
+    } catch (err) {
+        console.error('Trade plans fetch error:', err.message);
+        res.status(500).json({ error: 'Failed to fetch trade plans' });
+    }
 });
 
-app.post('/api/trade-plans', authMiddleware, (req, res) => {
+app.post('/api/trade-plans', authMiddleware, async (req, res) => {
     const { symbol, entry, sl, target } = req.body;
+    if (!symbol) {
+        return res.status(400).json({ error: 'Symbol is required' });
+    }
     try {
-        const info = db.prepare('INSERT INTO trade_plans (user_id, symbol, entry, sl, target) VALUES (?, ?, ?, ?, ?)').run(req.userId, symbol, entry, sl, target);
-        res.status(201).json({ id: info.lastInsertRowid, success: true });
+        const { data, error } = await req.app.locals.supabase
+            .from('trade_plans')
+            .insert([{ user_id: req.userId, symbol, entry, sl, target }])
+            .select('id')
+            .single();
+
+        if (error) throw error;
+        res.status(201).json({ id: data.id, success: true });
     } catch (err) {
+        console.error('Trade plan post error:', err.message);
         res.status(500).json({ error: err.message });
     }
 });
 
-app.delete('/api/trade-plans/:id', authMiddleware, (req, res) => {
+app.delete('/api/trade-plans/:id', authMiddleware, async (req, res) => {
     const { id } = req.params;
-    const result = db.prepare('DELETE FROM trade_plans WHERE id = ? AND user_id = ?').run(id, req.userId);
-    if (result.changes === 0) {
-        return res.status(404).json({ error: 'Trade plan not found' });
+    try {
+        const { error, count } = await req.app.locals.supabase
+            .from('trade_plans')
+            .delete({ count: 'exact' })
+            .eq('id', id)
+            .eq('user_id', req.userId);
+
+        if (error) throw error;
+        if (count === 0) {
+            return res.status(404).json({ error: 'Trade plan not found' });
+        }
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Trade plan delete error:', err.message);
+        res.status(500).json({ error: 'Failed to delete trade plan' });
     }
-    res.json({ success: true });
 });
 
 // --- CDSC IPO Proxy Routes ---
