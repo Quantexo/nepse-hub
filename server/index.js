@@ -29,12 +29,12 @@ app.get('/api/watchlist', authMiddleware, async (req, res) => {
     try {
         const { data: stocks, error } = await req.app.locals.supabase
             .from('watchlist')
-            .select('id, symbol')
+            .select('*')
             .eq('user_id', req.userId)
             .order('created_at', { ascending: false });
 
         if (error) throw error;
-        res.json((stocks || []).map(s => ({ id: s.id, symbol: s.symbol })));
+        res.json(stocks || []);
     } catch (err) {
         console.error('Watchlist fetch error:', err.message);
         res.status(500).json({ error: 'Failed to fetch watchlist' });
@@ -42,14 +42,17 @@ app.get('/api/watchlist', authMiddleware, async (req, res) => {
 });
 
 app.post('/api/watchlist', authMiddleware, async (req, res) => {
-    const { symbol } = req.body;
+    const { symbol, target_buy, target_sell, notes } = req.body;
     if (!symbol) {
         return res.status(400).json({ error: 'Symbol is required' });
     }
     try {
         const { data, error } = await req.app.locals.supabase
             .from('watchlist')
-            .insert([{ user_id: req.userId, symbol }]);
+            .upsert(
+                { user_id: req.userId, symbol, target_buy, target_sell, notes },
+                { onConflict: 'user_id,symbol' }
+            );
 
         if (error) throw error;
         res.status(201).json({ success: true });
@@ -59,23 +62,86 @@ app.post('/api/watchlist', authMiddleware, async (req, res) => {
     }
 });
 
-app.delete('/api/watchlist/:id', authMiddleware, async (req, res) => {
-    const { id } = req.params;
+app.delete('/api/watchlist/:symbol', authMiddleware, async (req, res) => {
+    const { symbol } = req.params;
     try {
         const { error, count } = await req.app.locals.supabase
             .from('watchlist')
             .delete({ count: 'exact' })
-            .eq('id', id)
+            .eq('symbol', symbol)
             .eq('user_id', req.userId);
 
         if (error) throw error;
-        if (count === 0) {
-            return res.status(404).json({ error: 'Watchlist item not found' });
-        }
         res.json({ success: true });
     } catch (err) {
         console.error('Watchlist delete error:', err.message);
         res.status(500).json({ error: 'Failed to delete watchlist item' });
+    }
+});
+
+app.put('/api/watchlist/:id', authMiddleware, async (req, res) => {
+    const { id } = req.params;
+    const { target_buy, target_sell, notes } = req.body;
+    try {
+        const { data, error } = await req.app.locals.supabase
+            .from('watchlist')
+            .update({ target_buy, target_sell, notes })
+            .eq('id', id)
+            .eq('user_id', req.userId)
+            .select();
+
+        if (error) throw error;
+        res.json({ success: true, data: data[0] });
+    } catch (err) {
+        console.error('Watchlist update error:', err.message);
+        res.status(500).json({ error: 'Failed to update watchlist item' });
+    }
+});
+
+// --- Transactions (Portfolio) Routes (Protected) ---
+app.get('/api/transactions', authMiddleware, async (req, res) => {
+    try {
+        const { data, error } = await req.app.locals.supabase
+            .from('transactions')
+            .select('*')
+            .eq('user_id', req.userId)
+            .order('transaction_date', { ascending: false });
+        if (error) throw error;
+        res.json({ success: true, data: data || [] });
+    } catch (err) {
+        console.error('Transactions fetch error:', err.message);
+        res.status(500).json({ success: false, error: 'Failed to fetch transactions', data: [] });
+    }
+});
+
+app.post('/api/transactions', authMiddleware, async (req, res) => {
+    try {
+        const tx = req.body;
+        const { data, error } = await req.app.locals.supabase
+            .from('transactions')
+            .insert([{ ...tx, user_id: req.userId }])
+            .select();
+        if (error) throw error;
+        res.status(201).json({ success: true, data: data[0] });
+    } catch (err) {
+        console.error('Transaction add error:', err.message);
+        res.status(500).json({ success: false, error: 'Failed to add transaction' });
+    }
+});
+
+app.delete('/api/transactions/:id', authMiddleware, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const { error, count } = await req.app.locals.supabase
+            .from('transactions')
+            .delete({ count: 'exact' })
+            .eq('id', id)
+            .eq('user_id', req.userId);
+        if (error) throw error;
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Transaction delete error:', err.message);
+        res.status(500).json({ success: false, error: 'Failed to delete transaction' });
     }
 });
 
@@ -133,6 +199,61 @@ app.delete('/api/trade-plans/:id', authMiddleware, async (req, res) => {
     } catch (err) {
         console.error('Trade plan delete error:', err.message);
         res.status(500).json({ error: 'Failed to delete trade plan' });
+    }
+});
+
+// --- Notifications Routes (Protected) ---
+app.get('/api/notifications', authMiddleware, async (req, res) => {
+    try {
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        const { data, error } = await req.app.locals.supabase
+            .from('notifications')
+            .select('*')
+            .eq('user_id', req.userId)
+            .gte('created_at', sevenDaysAgo.toISOString())
+            .order('created_at', { ascending: false });
+        if (error) throw error;
+        res.json(data || []);
+    } catch (err) {
+        console.error('Notifications fetch error:', err.message);
+        res.status(500).json([]);
+    }
+});
+
+app.post('/api/notifications', authMiddleware, async (req, res) => {
+    const notif = req.body;
+    try {
+        const { error } = await req.app.locals.supabase
+            .from('notifications')
+            .insert([{
+                user_id: req.userId,
+                title: notif.title,
+                message: notif.message,
+                type: notif.type || 'info',
+                symbol: notif.symbol || null,
+                is_read: false
+            }]);
+        if (error) throw error;
+        res.status(201).json({ success: true });
+    } catch (err) {
+        console.error('Notification add error:', err.message);
+        res.status(500).json({ success: false });
+    }
+});
+
+app.put('/api/notifications/mark-read', authMiddleware, async (req, res) => {
+    try {
+        const { error } = await req.app.locals.supabase
+            .from('notifications')
+            .update({ is_read: true })
+            .eq('user_id', req.userId)
+            .eq('is_read', false);
+        if (error) throw error;
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Notifications mark read error:', err.message);
+        res.status(500).json({ success: false });
     }
 });
 
