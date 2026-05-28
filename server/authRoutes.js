@@ -15,7 +15,6 @@ router.post('/register', async (req, res) => {
   const { email, username, password } = req.body;
   const supabase = req.app.locals.supabase;
 
-  // Validate input
   if (!email || !username || !password) {
     return res.status(400).json({ error: 'Email, username, and password required' });
   }
@@ -25,7 +24,6 @@ router.post('/register', async (req, res) => {
   }
 
   try {
-    // Check if email or username already exists in Supabase
     const { data: existingUser, error: checkError } = await supabase
       .from('users')
       .select('id')
@@ -38,13 +36,9 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Email or username already exists' });
     }
 
-    // Generate unique code
     const code = await generateUniqueCode(supabase);
-
-    // Hash password
     const passwordHash = await hashPassword(password);
 
-    // Insert user into Supabase
     const { data: newUser, error: insertError } = await supabase
       .from('users')
       .insert([{ code, email, username, password_hash: passwordHash }])
@@ -54,14 +48,13 @@ router.post('/register', async (req, res) => {
     if (insertError) throw insertError;
 
     const userId = newUser.id;
-
-    // Generate tokens
     const accessToken = generateAccessToken(userId, code);
     const refreshToken = generateRefreshToken(userId, code);
 
     res.status(201).json({
       success: true,
-      code, // Display code to user
+      id: userId,
+      code,
       email,
       username,
       accessToken,
@@ -78,13 +71,11 @@ router.post('/login', async (req, res) => {
   const { code, password } = req.body;
   const supabase = req.app.locals.supabase;
 
-  // Validate input
   if (!code || !password) {
     return res.status(400).json({ error: 'Code and password required' });
   }
 
   try {
-    // Find user by code in Supabase
     const { data: user, error: findError } = await supabase
       .from('users')
       .select('id, code, password_hash, email, username')
@@ -97,18 +88,17 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid code or password' });
     }
 
-    // Verify password
     const isPasswordValid = await verifyPassword(password, user.password_hash);
     if (!isPasswordValid) {
       return res.status(401).json({ error: 'Invalid code or password' });
     }
 
-    // Generate tokens
     const accessToken = generateAccessToken(user.id, user.code);
     const refreshToken = generateRefreshToken(user.id, user.code);
 
     res.json({
       success: true,
+      id: user.id,
       code: user.code,
       email: user.email,
       username: user.username,
@@ -136,7 +126,6 @@ router.post('/refresh', async (req, res) => {
   }
 
   try {
-    // Get user to verify still exists
     const { data: user, error: findError } = await supabase
       .from('users')
       .select('id, code')
@@ -149,7 +138,6 @@ router.post('/refresh', async (req, res) => {
       return res.status(401).json({ error: 'User not found' });
     }
 
-    // Generate new access token
     const newAccessToken = generateAccessToken(user.id, user.code);
 
     res.json({
@@ -165,7 +153,6 @@ router.post('/refresh', async (req, res) => {
 // POST /api/auth/logout - Invalidate session (client-side token removal)
 router.post('/logout', authMiddleware, (req, res) => {
   // With JWT, logout is primarily client-side (delete token from localStorage)
-  // But we can still send a confirmation
   res.json({ success: true, message: 'Logged out successfully' });
 });
 
@@ -197,6 +184,80 @@ router.get('/me', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error('Get user error:', err);
     res.status(500).json({ error: 'Failed to get user info' });
+  }
+});
+
+// GET /api/auth/notification-settings - Get notification preferences for logged-in user
+router.get('/notification-settings', authMiddleware, async (req, res) => {
+  const supabase = req.app.locals.supabase;
+  try {
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('market_summary_frequency, email_enabled, telegram_enabled, telegram_chat_id')
+      .eq('id', req.userId)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({
+      success: true,
+      settings: {
+        marketSummaryFrequency: user.market_summary_frequency || 'never',
+        emailEnabled: !!user.email_enabled,
+        telegramEnabled: !!user.telegram_enabled,
+        telegramConnected: !!user.telegram_chat_id,
+      }
+    });
+  } catch (err) {
+    console.error('Fetch notification settings error:', err.message);
+    res.status(500).json({ error: 'Failed to retrieve notification settings' });
+  }
+});
+
+// PUT /api/auth/notification-settings - Update notification preferences
+router.put('/notification-settings', authMiddleware, async (req, res) => {
+  const { marketSummaryFrequency, emailEnabled, telegramEnabled } = req.body;
+  const supabase = req.app.locals.supabase;
+
+  try {
+    const { error } = await supabase
+      .from('users')
+      .update({
+        market_summary_frequency: marketSummaryFrequency,
+        email_enabled: emailEnabled,
+        telegram_enabled: telegramEnabled
+      })
+      .eq('id', req.userId);
+
+    if (error) throw error;
+    res.json({ success: true, message: 'Notification settings updated successfully' });
+  } catch (err) {
+    console.error('Update notification settings error:', err.message);
+    res.status(500).json({ error: 'Failed to update notification settings' });
+  }
+});
+
+// GET /api/auth/telegram-status - Check if Telegram is linked for this user
+router.get('/telegram-status', authMiddleware, async (req, res) => {
+  const supabase = req.app.locals.supabase;
+  try {
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('telegram_chat_id')
+      .eq('id', req.userId)
+      .maybeSingle();
+
+    if (error) throw error;
+    res.json({
+      success: true,
+      connected: !!(user && user.telegram_chat_id)
+    });
+  } catch (err) {
+    console.error('Fetch telegram status error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch connection status' });
   }
 });
 

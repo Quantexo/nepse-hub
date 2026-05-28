@@ -4,6 +4,9 @@ const { createClient } = require('@supabase/supabase-js');
 const path = require('path');
 require('dotenv').config();
 
+const { startCronJobs } = require('./cronJobs');
+const { startBot } = require('./telegramBot');
+
 const app = express();
 const port = process.env.PORT || 3001;
 
@@ -263,4 +266,8 @@ app.use('/api/ipo', ipoRouter);
 
 app.listen(port, () => {
     console.log(`NEPSE Hub Backend running at http://localhost:${port}`);
+
+    // Start background services
+    startCronJobs(supabase);
+    startBot(supabase);
 });
