@@ -250,15 +250,12 @@ async function dispatchDailySummary(supabase) {
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', timeZone: 'Asia/Kathmandu' });
   const isWeekly = today === 'Friday'; // Send weekly digest on Fridays
 
-  let emailsSent = 0;
   let telegramSent = 0;
 
   for (const user of users) {
     if (user.market_summary_frequency === 'weekly' && !isWeekly) continue;
 
     const telegramText = formatTelegramMessage(summary, user.username);
-    const emailHtml = formatEmailHtml(summary, user.username);
-    const emailSubject = `📊 NEPSE Daily Summary — ${new Date().toLocaleDateString('en-NP', { timeZone: 'Asia/Kathmandu' })}`;
 
     if (user.telegram_enabled && user.telegram_chat_id) {
       try {
@@ -268,29 +265,24 @@ async function dispatchDailySummary(supabase) {
         console.error(`[MarketSummary] Telegram failed for user ${user.id}:`, e.message);
       }
     }
-
-    if (user.email_enabled && user.email) {
-      await sendEmail(user.email, emailSubject, emailHtml);
-      emailsSent++;
-    }
   }
 
-  console.log(`[MarketSummary] Dispatch complete — Telegram: ${telegramSent}, Email: ${emailsSent}`);
+  console.log(`[MarketSummary] Dispatch complete — Telegram: ${telegramSent}`);
 }
 
 async function dispatchTestSummary(supabase, userId) {
   console.log(`[MarketSummary] Fetching market data for test dispatch (User: ${userId})…`);
   let { stocks, indices } = await fetchMarketData();
 
-  // If the market is closed, stocks might be empty. Use mock data for testing.
+  // If the market is closed and both live fetch and DB are somehow completely empty, use mock data as a last-resort fallback.
   if (!stocks || !stocks.length) {
-    console.log('[MarketSummary] Market is closed/empty. Using mock stock/index data for test summary.');
+    console.log('[MarketSummary] Market data not available. Using mock stock/index data for test summary.');
     stocks = [
       { symbol: 'NABIL', price: 950, changePercent: 2.5 },
       { symbol: 'GBIME', price: 340, changePercent: -1.2 },
-      { symbol: 'AHPC', price: 280, changePercent: 10.0 }, // Upper circuit!
+      { symbol: 'AHPC', price: 280, changePercent: 10.0 },
       { symbol: 'HDL', price: 1950, changePercent: 1.8 },
-      { symbol: 'NICA', price: 780, changePercent: -10.0 }, // Lower circuit!
+      { symbol: 'NICA', price: 780, changePercent: -10.0 },
     ];
     indices = {
       NEPSE: { current: 2056.45, change: 12.34 }
@@ -311,13 +303,10 @@ async function dispatchTestSummary(supabase, userId) {
   }
 
   const results = {
-    telegram: { attempted: false, success: false, error: null },
-    email: { attempted: false, success: false, error: null }
+    telegram: { attempted: false, success: false, error: null }
   };
 
   const telegramText = formatTelegramMessage(summary, user.username);
-  const emailHtml = formatEmailHtml(summary, user.username);
-  const emailSubject = `🧪 TEST: NEPSE Daily Summary — ${new Date().toLocaleDateString('en-NP', { timeZone: 'Asia/Kathmandu' })}`;
 
   // Attempt to send Telegram
   if (user.telegram_chat_id) {
@@ -331,20 +320,6 @@ async function dispatchTestSummary(supabase, userId) {
     }
   } else {
     results.telegram.error = 'Telegram not linked (no chat ID). Connect in Profile first.';
-  }
-
-  // Attempt to send Email
-  if (user.email) {
-    results.email.attempted = true;
-    try {
-      await sendEmail(user.email, emailSubject, emailHtml);
-      results.email.success = true;
-    } catch (e) {
-      console.error(`[MarketSummary] Test Email failed for user ${user.id}:`, e.message);
-      results.email.error = e.message;
-    }
-  } else {
-    results.email.error = 'No email address registered for user.';
   }
 
   return results;
