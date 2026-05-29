@@ -245,7 +245,19 @@ app.post('/api/notifications', authMiddleware, async (req, res) => {
     }
 });
 
+app.post('/api/notifications/test-dispatch', authMiddleware, async (req, res) => {
+    try {
+        const { dispatchTestSummary } = require('./marketSummary');
+        const results = await dispatchTestSummary(req.app.locals.supabase, req.userId);
+        res.json({ success: true, results });
+    } catch (err) {
+        console.error('Test dispatch error:', err.message);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 app.put('/api/notifications/mark-read', authMiddleware, async (req, res) => {
+
     try {
         const { error } = await req.app.locals.supabase
             .from('notifications')

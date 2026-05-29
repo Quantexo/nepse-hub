@@ -278,4 +278,77 @@ async function dispatchDailySummary(supabase) {
   console.log(`[MarketSummary] Dispatch complete — Telegram: ${telegramSent}, Email: ${emailsSent}`);
 }
 
-module.exports = { dispatchDailySummary };
+async function dispatchTestSummary(supabase, userId) {
+  console.log(`[MarketSummary] Fetching market data for test dispatch (User: ${userId})…`);
+  let { stocks, indices } = await fetchMarketData();
+
+  // If the market is closed, stocks might be empty. Use mock data for testing.
+  if (!stocks || !stocks.length) {
+    console.log('[MarketSummary] Market is closed/empty. Using mock stock/index data for test summary.');
+    stocks = [
+      { symbol: 'NABIL', price: 950, changePercent: 2.5 },
+      { symbol: 'GBIME', price: 340, changePercent: -1.2 },
+      { symbol: 'AHPC', price: 280, changePercent: 10.0 }, // Upper circuit!
+      { symbol: 'HDL', price: 1950, changePercent: 1.8 },
+      { symbol: 'NICA', price: 780, changePercent: -10.0 }, // Lower circuit!
+    ];
+    indices = {
+      NEPSE: { current: 2056.45, change: 12.34 }
+    };
+  }
+
+  const summary = buildSummary(stocks, indices);
+
+  // Fetch the target test user
+  const { data: user, error } = await supabase
+    .from('users')
+    .select('id, username, email, email_enabled, telegram_enabled, telegram_chat_id')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (error || !user) {
+    throw new Error(error ? error.message : 'User not found');
+  }
+
+  const results = {
+    telegram: { attempted: false, success: false, error: null },
+    email: { attempted: false, success: false, error: null }
+  };
+
+  const telegramText = formatTelegramMessage(summary, user.username);
+  const emailHtml = formatEmailHtml(summary, user.username);
+  const emailSubject = `🧪 TEST: NEPSE Daily Summary — ${new Date().toLocaleDateString('en-NP', { timeZone: 'Asia/Kathmandu' })}`;
+
+  // Attempt to send Telegram
+  if (user.telegram_chat_id) {
+    results.telegram.attempted = true;
+    try {
+      await sendTelegramMessage(user.telegram_chat_id, `🔔 [TEST NOTIFICATION]\n\n` + telegramText);
+      results.telegram.success = true;
+    } catch (e) {
+      console.error(`[MarketSummary] Test Telegram failed for user ${user.id}:`, e.message);
+      results.telegram.error = e.message;
+    }
+  } else {
+    results.telegram.error = 'Telegram not linked (no chat ID). Connect in Profile first.';
+  }
+
+  // Attempt to send Email
+  if (user.email) {
+    results.email.attempted = true;
+    try {
+      await sendEmail(user.email, emailSubject, emailHtml);
+      results.email.success = true;
+    } catch (e) {
+      console.error(`[MarketSummary] Test Email failed for user ${user.id}:`, e.message);
+      results.email.error = e.message;
+    }
+  } else {
+    results.email.error = 'No email address registered for user.';
+  }
+
+  return results;
+}
+
+module.exports = { dispatchDailySummary, dispatchTestSummary };
+
