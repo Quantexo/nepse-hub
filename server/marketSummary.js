@@ -34,8 +34,32 @@ async function fetchMarketData() {
     fetchJson('https://nepse-hub-backend.onrender.com/core/index-live'),
   ]);
 
-  const stocks = liveData.status === 'fulfilled' && Array.isArray(liveData.value) ? liveData.value : [];
-  const indices = indicesData.status === 'fulfilled' ? indicesData.value : null;
+  const stocksRaw = liveData.status === 'fulfilled' && liveData.value ? liveData.value : null;
+  const indicesRaw = indicesData.status === 'fulfilled' && indicesData.value ? indicesData.value : null;
+
+  let stocks = [];
+  if (stocksRaw) {
+    if (Array.isArray(stocksRaw)) {
+      stocks = stocksRaw;
+    } else if (stocksRaw.data && Array.isArray(stocksRaw.data)) {
+      stocks = stocksRaw.data;
+    } else if (stocksRaw.result && Array.isArray(stocksRaw.result)) {
+      stocks = stocksRaw.result;
+    }
+  }
+
+  let indices = null;
+  if (indicesRaw) {
+    if (indicesRaw.result && Array.isArray(indicesRaw.result)) {
+      indices = indicesRaw.result;
+    } else if (Array.isArray(indicesRaw)) {
+      indices = indicesRaw;
+    } else if (indicesRaw.data) {
+      indices = indicesRaw.data;
+    } else {
+      indices = indicesRaw;
+    }
+  }
 
   return { stocks, indices };
 }
@@ -43,21 +67,43 @@ async function fetchMarketData() {
 // ── Summary builder ──────────────────────────────────────────────────────────
 
 function buildSummary(stocks, indices) {
-  const nepse = indices && (indices.NEPSE || indices.nepse || Object.values(indices)[0]);
+  // Normalize stocks to have consistent fields (symbol, price, changePercent)
+  const normalizedStocks = stocks.map(s => ({
+    symbol: s.symbol,
+    price: parseFloat(s.price || s.lastTradedPrice || 0),
+    changePercent: parseFloat(s.changePercent || s.percentageChange || 0)
+  }));
 
-  const nepseIndex = nepse
-    ? `${parseFloat(nepse.current || nepse.value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })} (${nepse.change >= 0 ? '+' : ''}${parseFloat(nepse.change || nepse.pointChange || 0).toFixed(2)})`
-    : 'N/A';
+  // Normalize indices to find the NEPSE index
+  let nepse = null;
+  if (indices) {
+    if (Array.isArray(indices)) {
+      nepse = indices.find(idx => idx.indexName && idx.indexName.toLowerCase() === 'nepse');
+    } else if (indices.result && Array.isArray(indices.result)) {
+      nepse = indices.result.find(idx => idx.indexName && idx.indexName.toLowerCase() === 'nepse');
+    } else if (typeof indices === 'object') {
+      nepse = indices.NEPSE || indices.nepse || Object.values(indices)[0];
+    }
+  }
+
+  // Normalize nepse index structure
+  let nepseIndex = 'N/A';
+  if (nepse) {
+    const current = parseFloat(nepse.current || nepse.indexValue || nepse.value || 0);
+    const change = parseFloat(nepse.change || nepse.difference || nepse.pointChange || 0);
+    const sign = change >= 0 ? '+' : '';
+    nepseIndex = `${current.toLocaleString('en-IN', { maximumFractionDigits: 2 })} (${sign}${change.toFixed(2)})`;
+  }
 
   // Sort by change % for gainers / losers
-  const sorted = [...stocks].sort((a, b) => parseFloat(b.changePercent || 0) - parseFloat(a.changePercent || 0));
+  const sorted = [...normalizedStocks].sort((a, b) => b.changePercent - a.changePercent);
 
   const topGainers = sorted.slice(0, 5);
   const topLosers = sorted.slice(-5).reverse();
 
   // Circuit hits (upper & lower)
-  const upperCircuit = stocks.filter((s) => parseFloat(s.changePercent || 0) >= 10);
-  const lowerCircuit = stocks.filter((s) => parseFloat(s.changePercent || 0) <= -10);
+  const upperCircuit = normalizedStocks.filter((s) => s.changePercent >= 15);
+  const lowerCircuit = normalizedStocks.filter((s) => s.changePercent <= -15);
 
   return { nepseIndex, topGainers, topLosers, upperCircuit, lowerCircuit };
 }
