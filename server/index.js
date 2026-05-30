@@ -272,10 +272,6 @@ app.put('/api/notifications/mark-read', authMiddleware, async (req, res) => {
     }
 });
 
-// --- CDSC IPO Proxy Routes ---
-const ipoRouter = require('./ipoRouter');
-app.use('/api/ipo', ipoRouter);
-
 app.listen(port, () => {
     console.log(`NEPSE Hub Backend running at http://localhost:${port}`);
 
