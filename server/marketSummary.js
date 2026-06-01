@@ -102,8 +102,8 @@ function buildSummary(stocks, indices) {
   const topLosers = sorted.slice(-5).reverse();
 
   // Circuit hits (upper & lower)
-  const upperCircuit = normalizedStocks.filter((s) => s.changePercent >= 15);
-  const lowerCircuit = normalizedStocks.filter((s) => s.changePercent <= -15);
+  const upperCircuit = normalizedStocks.filter((s) => s.changePercent >= 14.9);
+  const lowerCircuit = normalizedStocks.filter((s) => s.changePercent <= -14.9);
 
   return { nepseIndex, topGainers, topLosers, upperCircuit, lowerCircuit };
 }
