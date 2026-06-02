@@ -24,6 +24,8 @@ if (!supabaseUrl || !supabaseKey) {
 }
 
 const supabase = createClient(supabaseUrl, supabaseKey);
+app.locals.supabase = supabase;
+console.log('Supabase connection successful');
 
 // --- Authentication Routes ---
 const authRoutes = require('./authRoutes');
