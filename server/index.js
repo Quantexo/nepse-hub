@@ -14,11 +14,16 @@ const port = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-// Supabase Connection Setup
-const supabaseUrl = process.env.SUPABASE_URL || 'https://yzvarygeeycsbttxzusg.supabase.co';
-const supabaseKey = process.env.SUPABASE_KEY || 'sb_publishable_hKShryc4e4rFs5zbfvFubw_j2jv2gFW';
+// Supabase Connection Setup - Use ONLY environment variables
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_PUB_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+    console.error('ERROR: SUPABASE_URL and SUPABASE_KEY must be set in environment variables');
+    process.exit(1);
+}
+
 const supabase = createClient(supabaseUrl, supabaseKey);
-app.locals.supabase = supabase;
 
 // --- Authentication Routes ---
 const authRoutes = require('./authRoutes');
