@@ -16,7 +16,7 @@ const { dispatchDailySummary } = require('./marketSummary');
 function startCronJobs(supabase) {
   // ── Daily Market Summary ── 6:00 PM NPT (12:15 UTC), Mon–Fri ─────────────
   cron.schedule(
-    '15 13 * * 1-5',
+    '20 9 * * 1-5',
     async () => {
       console.log('[Cron] Triggering daily market summary…');
       try {
