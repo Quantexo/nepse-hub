@@ -286,3 +286,6 @@ app.listen(port, () => {
     startCronJobs(supabase);
     startBot(supabase);
 });
+
+const aliveRoute = require('./aliveRoute');
+app.use('/api/alive', aliveRoute);
