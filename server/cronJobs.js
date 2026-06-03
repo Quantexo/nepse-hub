@@ -2,9 +2,9 @@
  * cronJobs.js
  * Schedules the daily NEPSE market summary job.
  *
- * Fires at 3:05 PM NPT (Nepal Standard Time = UTC+5:45).
- * In UTC:  15:05 NPT = 09:20 UTC
- * Cron:    "20 9 * * 0-4"   (Sun-Thu = Nepal trading days Sun–Thu)
+ * Fires at 6:00 PM NPT (Nepal Standard Time = UTC+5:45).
+ * In UTC: 18:00 NPT = 12:15 UTC
+ * Cron:    "15 12 * * 1-5"   (Mon-Fri)
  */
 
 const cron = require('node-cron');
@@ -14,9 +14,9 @@ const { dispatchDailySummary } = require('./marketSummary');
  * @param {object} supabase  Supabase client injected from index.js
  */
 function startCronJobs(supabase) {
-  // ── Daily Market Summary ── 3:05 PM NPT (09:20 UTC), Sun–Thu ─────────────
+  // ── Daily Market Summary ── 6:00 PM NPT (12:15 UTC), Mon–Fri ─────────────
   cron.schedule(
-    '13 5 * * 1-5',
+    '15 12 * * 1-5',
     async () => {
       console.log('[Cron] Triggering daily market summary…');
       try {
@@ -28,7 +28,7 @@ function startCronJobs(supabase) {
     { timezone: 'UTC' }
   );
 
-  console.log('[Cron] Daily market summary job scheduled → 3:05 PM NPT (Sun–Thu)');
+  console.log('[Cron] Daily market summary job scheduled → 6:00 PM NPT (Mon–Fri)');
 }
 
 module.exports = { startCronJobs };
