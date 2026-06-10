@@ -29,58 +29,39 @@ function fetchJson(url) {
 }
 
 async function fetchMarketData() {
-  const [liveData, indicesData] = await Promise.allSettled([
-    fetchJson('https://nepse-hub-backend.onrender.com/core/live-nepse'),
-    fetchJson('https://nepse-hub-backend.onrender.com/core/index-live'),
-  ]);
+  const homepageData = await fetchJson('https://nepse-hub-backend.onrender.com/core/homepage-data');
 
-  const stocksRaw = liveData.status === 'fulfilled' && liveData.value ? liveData.value : null;
-  const indicesRaw = indicesData.status === 'fulfilled' && indicesData.value ? indicesData.value : null;
-
-  let stocks = [];
-  if (stocksRaw) {
-    if (Array.isArray(stocksRaw)) {
-      stocks = stocksRaw;
-    } else if (stocksRaw.data && Array.isArray(stocksRaw.data)) {
-      stocks = stocksRaw.data;
-    } else if (stocksRaw.result && Array.isArray(stocksRaw.result)) {
-      stocks = stocksRaw.result;
-    }
+  if (!homepageData) {
+    return { indices: null, topGainers: [], topLosers: [] };
   }
 
-  let indices = null;
-  if (indicesRaw) {
-    if (indicesRaw.result && Array.isArray(indicesRaw.result)) {
-      indices = indicesRaw.result;
-    } else if (Array.isArray(indicesRaw)) {
-      indices = indicesRaw;
-    } else if (indicesRaw.data) {
-      indices = indicesRaw.data;
-    } else {
-      indices = indicesRaw;
-    }
-  }
+  const indices = homepageData.indices || null;
+  const topGainers = homepageData.topGainers || [];
+  const topLosers = homepageData.topLosers || [];
 
-  return { stocks, indices };
+  return { indices, topGainers, topLosers };
 }
 
 // ── Summary builder ──────────────────────────────────────────────────────────
 
-function buildSummary(stocks, indices) {
+function buildSummary(indices, topGainers, topLosers) {
   // Normalize stocks to have consistent fields (symbol, price, changePercent)
-  const normalizedStocks = stocks.map(s => ({
+  const normalizeStock = s => ({
     symbol: s.symbol,
     price: parseFloat(s.price || s.lastTradedPrice || 0),
     changePercent: parseFloat(s.changePercent || s.percentageChange || 0)
-  }));
+  });
+
+  const normalizedGainers = (topGainers || []).map(normalizeStock);
+  const normalizedLosers = (topLosers || []).map(normalizeStock);
 
   // Normalize indices to find the NEPSE index
   let nepse = null;
   if (indices) {
     if (Array.isArray(indices)) {
-      nepse = indices.find(idx => idx.indexName && idx.indexName.toLowerCase() === 'nepse');
+      nepse = indices.find(idx => (idx.name && idx.name.toLowerCase() === 'nepse') || (idx.symbol && idx.symbol.toLowerCase() === 'nepse') || (idx.indexName && idx.indexName.toLowerCase() === 'nepse'));
     } else if (indices.result && Array.isArray(indices.result)) {
-      nepse = indices.result.find(idx => idx.indexName && idx.indexName.toLowerCase() === 'nepse');
+      nepse = indices.result.find(idx => (idx.name && idx.name.toLowerCase() === 'nepse') || (idx.symbol && idx.symbol.toLowerCase() === 'nepse') || (idx.indexName && idx.indexName.toLowerCase() === 'nepse'));
     } else if (typeof indices === 'object') {
       nepse = indices.NEPSE || indices.nepse || Object.values(indices)[0];
     }
@@ -89,23 +70,20 @@ function buildSummary(stocks, indices) {
   // Normalize nepse index structure
   let nepseIndex = 'N/A';
   if (nepse) {
-    const current = parseFloat(nepse.current || nepse.indexValue || nepse.value || 0);
+    const current = parseFloat(nepse.currentValue || nepse.current || nepse.indexValue || nepse.value || 0);
     const change = parseFloat(nepse.change || nepse.difference || nepse.pointChange || 0);
     const sign = change >= 0 ? '+' : '';
     nepseIndex = `${current.toLocaleString('en-IN', { maximumFractionDigits: 2 })} (${sign}${change.toFixed(2)})`;
   }
 
-  // Sort by change % for gainers / losers
-  const sorted = [...normalizedStocks].sort((a, b) => b.changePercent - a.changePercent);
-
-  const topGainers = sorted.slice(0, 5);
-  const topLosers = sorted.slice(-5).reverse();
+  const finalGainers = normalizedGainers.slice(0, 5);
+  const finalLosers = normalizedLosers.slice(0, 5);
 
   // Circuit hits (upper & lower)
-  const upperCircuit = normalizedStocks.filter((s) => s.changePercent >= 14.9);
-  const lowerCircuit = normalizedStocks.filter((s) => s.changePercent <= -14.9);
+  const upperCircuit = normalizedGainers.filter((s) => s.changePercent >= 14.9);
+  const lowerCircuit = normalizedLosers.filter((s) => s.changePercent <= -14.9);
 
-  return { nepseIndex, topGainers, topLosers, upperCircuit, lowerCircuit };
+  return { nepseIndex, topGainers: finalGainers, topLosers: finalLosers, upperCircuit, lowerCircuit };
 }
 
 // ── Formatters ─────────────────────────────────────────────────────────────────
@@ -271,14 +249,14 @@ async function sendEmail(to, subject, html) {
 
 async function dispatchDailySummary(supabase) {
   console.log('[MarketSummary] Fetching market data…');
-  const { stocks, indices } = await fetchMarketData();
+  const { indices, topGainers, topLosers } = await fetchMarketData();
 
-  if (!stocks.length) {
+  if (!topGainers.length && !topLosers.length) {
     console.warn('[MarketSummary] No stock data available — skipping dispatch.');
     return;
   }
 
-  const summary = buildSummary(stocks, indices);
+  const summary = buildSummary(indices, topGainers, topLosers);
   console.log('[MarketSummary] Summary built. Fetching eligible users…');
 
   // Get all users that have at least one notification channel enabled and
@@ -318,24 +296,26 @@ async function dispatchDailySummary(supabase) {
 
 async function dispatchTestSummary(supabase, userId) {
   console.log(`[MarketSummary] Fetching market data for test dispatch (User: ${userId})…`);
-  let { stocks, indices } = await fetchMarketData();
+  let { indices, topGainers, topLosers } = await fetchMarketData();
 
   // If the market is closed and both live fetch and DB are somehow completely empty, use mock data as a last-resort fallback.
-  if (!stocks || !stocks.length) {
+  if ((!topGainers || !topGainers.length) && (!topLosers || !topLosers.length)) {
     console.log('[MarketSummary] Market data not available. Using mock stock/index data for test summary.');
-    stocks = [
-      { symbol: 'NABIL', price: 950, changePercent: 2.5 },
-      { symbol: 'GBIME', price: 340, changePercent: -1.2 },
-      { symbol: 'AHPC', price: 280, changePercent: 10.0 },
-      { symbol: 'HDL', price: 1950, changePercent: 1.8 },
-      { symbol: 'NICA', price: 780, changePercent: -10.0 },
+    topGainers = [
+      { symbol: 'AHPC', lastTradedPrice: 280, changePercent: 10.0 },
+      { symbol: 'NABIL', lastTradedPrice: 950, changePercent: 2.5 },
+      { symbol: 'HDL', lastTradedPrice: 1950, changePercent: 1.8 }
     ];
-    indices = {
-      NEPSE: { current: 2056.45, change: 12.34 }
-    };
+    topLosers = [
+      { symbol: 'NICA', lastTradedPrice: 780, changePercent: -10.0 },
+      { symbol: 'GBIME', lastTradedPrice: 340, changePercent: -1.2 }
+    ];
+    indices = [
+      { symbol: 'NEPSE', name: 'NEPSE', currentValue: 2056.45, change: 12.34, changePercent: 0.6 }
+    ];
   }
 
-  const summary = buildSummary(stocks, indices);
+  const summary = buildSummary(indices, topGainers, topLosers);
 
   // Fetch the target test user
   const { data: user, error } = await supabase
@@ -372,4 +352,3 @@ async function dispatchTestSummary(supabase, userId) {
 }
 
 module.exports = { dispatchDailySummary, dispatchTestSummary };
-
