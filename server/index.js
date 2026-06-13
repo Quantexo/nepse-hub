@@ -289,3 +289,7 @@ app.listen(port, () => {
 
 const aliveRoute = require('./aliveRoute');
 app.use('/api/alive', aliveRoute);
+
+const symbolDataRoute = require('./symbolDataRoute');
+app.use('/api/symbol-data', symbolDataRoute);
+
