@@ -279,6 +279,38 @@ app.put('/api/notifications/mark-read', authMiddleware, async (req, res) => {
     }
 });
 
+app.put('/api/notifications/:id/mark-read', authMiddleware, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const { error } = await req.app.locals.supabase
+            .from('notifications')
+            .update({ is_read: true })
+            .eq('id', id)
+            .eq('user_id', req.userId);
+        if (error) throw error;
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Notification mark read error:', err.message);
+        res.status(500).json({ success: false });
+    }
+});
+
+app.delete('/api/notifications/:id', authMiddleware, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const { error } = await req.app.locals.supabase
+            .from('notifications')
+            .delete()
+            .eq('id', id)
+            .eq('user_id', req.userId);
+        if (error) throw error;
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Notification delete error:', err.message);
+        res.status(500).json({ success: false });
+    }
+});
+
 app.listen(port, () => {
     console.log(`NEPSE Hub Backend running at http://localhost:${port}`);
 
