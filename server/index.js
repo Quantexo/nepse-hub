@@ -84,8 +84,14 @@ if (!supabaseUrl || !supabaseKey) {
 const authRoutes = require('./authRoutes');
 app.use('/api/auth', authRoutes);
 
-// --- Import Authentication Middleware ---
+// --- Import Middleware ---
 const authMiddleware = require('./auth-middleware');
+const {
+    validateWatchlistInput,
+    validateTransactionInput,
+    validateTradePlanInput,
+    validateNotificationInput
+} = require('./validation-middleware');
 
 // --- Watchlist Routes (Protected) ---
 app.get('/api/watchlist', authMiddleware, async (req, res) => {
@@ -104,11 +110,8 @@ app.get('/api/watchlist', authMiddleware, async (req, res) => {
     }
 });
 
-app.post('/api/watchlist', authMiddleware, async (req, res) => {
+app.post('/api/watchlist', authMiddleware, validateWatchlistInput, async (req, res) => {
     const { symbol, target_buy, target_sell, notes } = req.body;
-    if (!symbol) {
-        return res.status(400).json({ error: 'Symbol is required' });
-    }
     try {
         const { data, error } = await req.app.locals.supabase
             .from('watchlist')
@@ -177,7 +180,7 @@ app.get('/api/transactions', authMiddleware, async (req, res) => {
     }
 });
 
-app.post('/api/transactions', authMiddleware, async (req, res) => {
+app.post('/api/transactions', authMiddleware, validateTransactionInput, async (req, res) => {
     try {
         const payload = req.body;
         const txList = Array.isArray(payload) ? payload : [payload];
@@ -229,11 +232,8 @@ app.get('/api/trade-plans', authMiddleware, async (req, res) => {
     }
 });
 
-app.post('/api/trade-plans', authMiddleware, async (req, res) => {
+app.post('/api/trade-plans', authMiddleware, validateTradePlanInput, async (req, res) => {
     const { symbol, entry, sl, target } = req.body;
-    if (!symbol) {
-        return res.status(400).json({ error: 'Symbol is required' });
-    }
     try {
         const { data, error } = await req.app.locals.supabase
             .from('trade_plans')
@@ -288,7 +288,7 @@ app.get('/api/notifications', authMiddleware, async (req, res) => {
     }
 });
 
-app.post('/api/notifications', authMiddleware, async (req, res) => {
+app.post('/api/notifications', authMiddleware, validateNotificationInput, async (req, res) => {
     const notif = req.body;
     try {
         const { error } = await req.app.locals.supabase
