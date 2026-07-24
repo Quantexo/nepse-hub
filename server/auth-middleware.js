@@ -4,28 +4,20 @@ const { verifyAccessToken, extractToken } = require('./auth-utils');
 function authMiddleware(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
-    console.log('Auth header present:', !!authHeader); // Debug log
-    
     const token = extractToken(authHeader);
 
     if (!token) {
-      console.log('No token extracted from header');
       return res.status(401).json({ error: 'No token provided' });
     }
 
-    console.log('Token extracted, verifying...'); // Debug log
     const decoded = verifyAccessToken(token);
     
     if (!decoded) {
-      console.log('Token verification failed - decoded is null/undefined');
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
-
-    console.log('Token verified successfully for userId:', decoded.userId); // Debug log
     
     // Validate that we have a userId
     if (!decoded.userId) {
-      console.log('Token missing userId');
       return res.status(401).json({ error: 'Invalid token structure' });
     }
 

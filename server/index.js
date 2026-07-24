@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const { createClient } = require('@supabase/supabase-js');
 const path = require('path');
 require('dotenv').config();
@@ -10,22 +12,73 @@ const { startBot } = require('./telegramBot');
 const app = express();
 const port = process.env.PORT || 3001;
 
-// Middleware
-app.use(cors());
-app.use(express.json());
+// --- Security Headers (Helmet) ---
+app.use(helmet({
+    contentSecurityPolicy: false, // Disable default CSP so API response embedding isn't blocked
+    crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
+
+// --- CORS Configuration ---
+const allowedOrigins = process.env.ALLOWED_ORIGINS 
+    ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+    : [
+        'http://localhost:5500',
+        'http://localhost:5600',
+        'http://127.0.0.1:5500',
+        'http://localhost:3000',
+        'http://localhost:3001',
+        'https://nepse-hub-backend.vercel.app',
+        'https://nepsehub.vercel.app/'
+    ];
+
+app.use(cors({
+    origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps, curl, server-to-server)
+        if (!origin || allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+            return callback(null, true);
+        }
+        return callback(null, true); // Fallback: allow all origins while supporting credentialed headers
+    },
+    credentials: true
+}));
+
+// --- Request Body Payload Limit ---
+app.use(express.json({ limit: '100kb' }));
+
+// --- Rate Limiting ---
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 15, // Limit each IP to 15 login/register requests per window
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many authentication attempts from this IP. Please try again after 15 minutes.' }
+});
+
+const apiLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 200, // Limit each IP to 200 requests per minute
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many API requests. Please slow down.' }
+});
+
+// Apply rate limiters
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/register', authLimiter);
+app.use('/api/', apiLimiter);
 
 // Supabase Connection Setup - Use ONLY environment variables
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_PUB_KEY;
 
+let supabase = null;
 if (!supabaseUrl || !supabaseKey) {
-    console.error('ERROR: SUPABASE_URL and SUPABASE_KEY must be set in environment variables');
-    process.exit(1);
+    console.error('ERROR: SUPABASE_URL and SUPABASE_PUB_KEY must be set in environment variables');
+} else {
+    supabase = createClient(supabaseUrl, supabaseKey);
+    app.locals.supabase = supabase;
+    console.log('Supabase connection successful');
 }
-
-const supabase = createClient(supabaseUrl, supabaseKey);
-app.locals.supabase = supabase;
-console.log('Supabase connection successful');
 
 // --- Authentication Routes ---
 const authRoutes = require('./authRoutes');
@@ -126,16 +179,20 @@ app.get('/api/transactions', authMiddleware, async (req, res) => {
 
 app.post('/api/transactions', authMiddleware, async (req, res) => {
     try {
-        const tx = req.body;
+        const payload = req.body;
+        const txList = Array.isArray(payload) ? payload : [payload];
+        const rowsToInsert = txList.map(tx => ({ ...tx, user_id: req.userId }));
+
         const { data, error } = await req.app.locals.supabase
             .from('transactions')
-            .insert([{ ...tx, user_id: req.userId }])
+            .insert(rowsToInsert)
             .select();
+
         if (error) throw error;
-        res.status(201).json({ success: true, data: data[0] });
+        res.status(201).json({ success: true, data: Array.isArray(payload) ? data : data[0] });
     } catch (err) {
         console.error('Transaction add error:', err.message);
-        res.status(500).json({ success: false, error: 'Failed to add transaction' });
+        res.status(500).json({ success: false, error: err.message || 'Failed to add transaction' });
     }
 });
 
@@ -311,17 +368,35 @@ app.delete('/api/notifications/:id', authMiddleware, async (req, res) => {
     }
 });
 
-app.listen(port, () => {
-    console.log(`NEPSE Hub Backend running at http://localhost:${port}`);
-
-    // Start background services
-    startCronJobs(supabase);
-    startBot(supabase);
-});
-
 const aliveRoute = require('./aliveRoute');
 app.use('/api/alive', aliveRoute);
 
 const symbolDataRoute = require('./symbolDataRoute');
 app.use('/api/symbol-data', symbolDataRoute);
+
+// --- Global Error Handler Middleware ---
+app.use((err, req, res, next) => {
+    console.error(`[Global Error] ${req.method} ${req.url}:`, err);
+    res.status(err.status || 500).json({
+        error: process.env.NODE_ENV === 'production'
+            ? 'Internal server error'
+            : err.message || 'An unexpected error occurred'
+    });
+});
+
+process.on('unhandledRejection', (reason) => {
+    console.error('[Unhandled Promise Rejection]:', reason);
+});
+
+if (require.main === module) {
+    app.listen(port, () => {
+        console.log(`NEPSE Hub Backend running at http://localhost:${port}`);
+        if (supabase) {
+            startCronJobs(supabase);
+            startBot(supabase);
+        }
+    });
+}
+
+module.exports = app;
 
