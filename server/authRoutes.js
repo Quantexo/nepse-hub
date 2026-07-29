@@ -304,7 +304,7 @@ async function sendResetEmail(email, resetUrl) {
   if (!process.env.RESEND_API_KEY) {
     // Fallback: print to console for local development
     console.log('\n==================================================');
-    console.log('📬 [SIMULATED EMAIL] Password reset requested.');
+    console.log('📬 [SIMULATED EMAIL — RESEND_API_KEY not set]');
     console.log(`To: ${email}`);
     console.log(`Reset URL: ${resetUrl}`);
     console.log('==================================================\n');
@@ -314,7 +314,9 @@ async function sendResetEmail(email, resetUrl) {
   const resend = new Resend(process.env.RESEND_API_KEY);
   const fromAddress = process.env.RESEND_FROM || 'NEPSE HUB <onboarding@resend.dev>';
 
-  await resend.emails.send({
+  console.log(`[Resend] Sending reset email to: ${email} from: ${fromAddress}`);
+
+  const { data, error } = await resend.emails.send({
     from: fromAddress,
     to: email,
     subject: 'Reset Your NEPSE HUB Password',
@@ -332,6 +334,13 @@ async function sendResetEmail(email, resetUrl) {
       </div>
     `,
   });
+
+  if (error) {
+    console.error('[Resend] Email send failed:', JSON.stringify(error));
+    throw new Error(`Email send failed: ${error.message || JSON.stringify(error)}`);
+  }
+
+  console.log(`[Resend] Email sent successfully. ID: ${data?.id}`);
 }
 
 // POST /api/auth/forgot-password
