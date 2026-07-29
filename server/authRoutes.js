@@ -1,5 +1,7 @@
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
+const nodemailer = require('nodemailer');
 const {
   generateUniqueCode,
   hashPassword,
@@ -294,6 +296,148 @@ router.get('/telegram-status', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error('Fetch telegram status error:', err.message);
     res.status(500).json({ error: 'Failed to fetch connection status' });
+  }
+});
+
+// ── Email Reset Sender Helper ──
+async function sendResetEmail(email, resetUrl) {
+  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.log('\n==================================================');
+    console.log('📬 [SIMULATED EMAIL] Password reset requested.');
+    console.log(`To: ${email}`);
+    console.log(`Reset URL: ${resetUrl}`);
+    console.log('==================================================\n');
+    return; // Skip actual sending
+  }
+
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: parseInt(process.env.SMTP_PORT || '587', 10),
+    secure: false,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+
+  const mailOptions = {
+    from: `"NEPSE HUB" <${process.env.SMTP_USER}>`,
+    to: email,
+    subject: 'Reset Your NEPSE HUB Password',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+        <h2 style="color: #10b981; text-align: center;">NEPSE HUB</h2>
+        <p>Hello,</p>
+        <p>We received a request to reset the password for your NEPSE HUB account. Click the button below to set a new password. This link will expire in 1 hour.</p>
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${resetUrl}" style="background-color: #10b981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Reset Password</a>
+        </div>
+        <p style="color: #64748b; font-size: 13px;">If you did not request a password reset, please ignore this email.</p>
+        <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+        <p style="color: #94a3b8; font-size: 11px; text-align: center;">NEPSE HUB © 2026. All rights reserved.</p>
+      </div>
+    `,
+  };
+
+  await transporter.sendMail(mailOptions);
+}
+
+// POST /api/auth/forgot-password
+router.post('/forgot-password', async (req, res) => {
+  const { email } = req.body;
+  const supabase = req.app.locals.supabase;
+
+  if (!email || typeof email !== 'string') {
+    return res.status(400).json({ error: 'Email is required' });
+  }
+
+  try {
+    const { data: user, error: findError } = await supabase
+      .from('users')
+      .select('id, email')
+      .eq('email', email.trim().toLowerCase())
+      .maybeSingle();
+
+    if (findError) throw findError;
+
+    // Standard security: don't leak account existence
+    if (!user) {
+      return res.json({ success: true, message: 'If the email exists, a reset link has been sent.' });
+    }
+
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenExpiry = new Date(Date.now() + 3600000); // 1 hour
+
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({
+        reset_token: resetToken,
+        reset_token_expiry: resetTokenExpiry.toISOString(),
+      })
+      .eq('id', user.id);
+
+    if (updateError) throw updateError;
+
+    const origin = req.headers.origin || 'http://localhost:5500';
+    const resetUrl = `${origin}/pages/reset-password.html?token=${resetToken}`;
+
+    await sendResetEmail(user.email, resetUrl);
+
+    res.json({ success: true, message: 'If the email exists, a reset link has been sent.' });
+  } catch (err) {
+    console.error('Forgot password error:', err);
+    res.status(500).json({ error: 'Failed to process password reset request' });
+  }
+});
+
+// POST /api/auth/reset-password
+router.post('/reset-password', async (req, res) => {
+  const { token, password } = req.body;
+  const supabase = req.app.locals.supabase;
+
+  if (!token || !password) {
+    return res.status(400).json({ error: 'Token and new password are required' });
+  }
+
+  if (password.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  }
+
+  try {
+    const { data: user, error: findError } = await supabase
+      .from('users')
+      .select('id, reset_token_expiry')
+      .eq('reset_token', token)
+      .maybeSingle();
+
+    if (findError) throw findError;
+
+    if (!user) {
+      return res.status(400).json({ error: 'Invalid or expired password reset token' });
+    }
+
+    const now = new Date();
+    const expiry = new Date(user.reset_token_expiry);
+    if (now > expiry) {
+      return res.status(400).json({ error: 'Password reset token has expired' });
+    }
+
+    const passwordHash = await hashPassword(password);
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({
+        password_hash: passwordHash,
+        reset_token: null,
+        reset_token_expiry: null,
+      })
+      .eq('id', user.id);
+
+    if (updateError) throw updateError;
+
+    res.json({ success: true, message: 'Password has been reset successfully' });
+  } catch (err) {
+    console.error('Reset password error:', err);
+    res.status(500).json({ error: 'Failed to reset password' });
   }
 });
 
