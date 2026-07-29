@@ -51,6 +51,15 @@ router.post('/register', async (req, res) => {
     const accessToken = generateAccessToken(userId, code);
     const refreshToken = generateRefreshToken(userId, code);
 
+    // Set refresh token in HttpOnly cookie
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: true, // Must be true for SameSite=None
+      sameSite: 'none',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      path: '/api/auth'
+    });
+
     res.status(201).json({
       success: true,
       id: userId,
@@ -58,7 +67,6 @@ router.post('/register', async (req, res) => {
       email,
       username,
       accessToken,
-      refreshToken,
     });
   } catch (err) {
     console.error('Registration error:', err);
@@ -96,6 +104,15 @@ router.post('/login', async (req, res) => {
     const accessToken = generateAccessToken(user.id, user.code);
     const refreshToken = generateRefreshToken(user.id, user.code);
 
+    // Set refresh token in HttpOnly cookie
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: true, // Must be true for SameSite=None
+      sameSite: 'none',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      path: '/api/auth'
+    });
+
     res.json({
       success: true,
       id: user.id,
@@ -103,7 +120,6 @@ router.post('/login', async (req, res) => {
       email: user.email,
       username: user.username,
       accessToken,
-      refreshToken,
     });
   } catch (err) {
     console.error('Login error:', err);
@@ -111,9 +127,24 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// POST /api/auth/refresh - Refresh access token using refresh token
+// POST /api/auth/refresh - Refresh access token using refresh token from cookie
 router.post('/refresh', async (req, res) => {
-  const { refreshToken } = req.body;
+  // Helper to extract cookie value
+  let refreshToken = null;
+  if (req.headers.cookie) {
+    const cookies = req.headers.cookie.split(';').reduce((acc, cookie) => {
+      const parts = cookie.split('=');
+      acc[parts[0].trim()] = (parts[1] || '').trim();
+      return acc;
+    }, {});
+    refreshToken = cookies.refreshToken;
+  }
+
+  // Fallback to body during migration period if needed, otherwise cookie only
+  if (!refreshToken) {
+    refreshToken = req.body.refreshToken;
+  }
+
   const supabase = req.app.locals.supabase;
 
   if (!refreshToken) {
@@ -150,9 +181,14 @@ router.post('/refresh', async (req, res) => {
   }
 });
 
-// POST /api/auth/logout - Invalidate session (client-side token removal)
+// POST /api/auth/logout - Invalidate session by clearing httpOnly cookie
 router.post('/logout', authMiddleware, (req, res) => {
-  // With JWT, logout is primarily client-side (delete token from localStorage)
+  res.clearCookie('refreshToken', {
+    httpOnly: true,
+    secure: true,
+    sameSite: 'none',
+    path: '/api/auth'
+  });
   res.json({ success: true, message: 'Logged out successfully' });
 });
 
