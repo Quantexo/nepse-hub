@@ -12,6 +12,10 @@ const { startBot } = require('./telegramBot');
 const app = express();
 const port = process.env.PORT || 3001;
 
+// Trust the first proxy hop (required on Render / any reverse-proxy host)
+// Without this, express-rate-limit throws ERR_ERL_UNEXPECTED_X_FORWARDED_FOR
+app.set('trust proxy', 1);
+
 // --- Security Headers (Helmet) ---
 app.use(helmet({
     contentSecurityPolicy: false, // Disable default CSP so API response embedding isn't blocked
