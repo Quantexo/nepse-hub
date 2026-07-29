@@ -222,10 +222,11 @@ async function sendEmail(to, subject, html) {
     return;
   }
 
+  const smtpPort = parseInt(process.env.SMTP_PORT || '465', 10);
   const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: parseInt(process.env.SMTP_PORT || '587', 10),
-    secure: false,
+    port: smtpPort,
+    secure: smtpPort === 465, // true for SSL (port 465), false for STARTTLS (port 587)
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
