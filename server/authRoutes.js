@@ -1,7 +1,6 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const { Resend } = require('resend');
 const {
   generateUniqueCode,
   hashPassword,
@@ -299,48 +298,58 @@ router.get('/telegram-status', authMiddleware, async (req, res) => {
   }
 });
 
-// ── Email Reset Sender Helper (Resend) ──
+// ── Email Reset Sender Helper (Brevo HTTPS API — no SMTP port needed) ──
 async function sendResetEmail(email, resetUrl) {
-  if (!process.env.RESEND_API_KEY) {
+  if (!process.env.BREVO_API_KEY) {
     // Fallback: print to console for local development
     console.log('\n==================================================');
-    console.log('📬 [SIMULATED EMAIL — RESEND_API_KEY not set]');
+    console.log('📬 [SIMULATED EMAIL — BREVO_API_KEY not set]');
     console.log(`To: ${email}`);
     console.log(`Reset URL: ${resetUrl}`);
     console.log('==================================================\n');
     return;
   }
 
-  const resend = new Resend(process.env.RESEND_API_KEY);
-  const fromAddress = process.env.RESEND_FROM || 'NEPSE HUB <onboarding@resend.dev>';
+  const senderName = process.env.BREVO_SENDER_NAME || 'NEPSE HUB';
+  const senderEmail = process.env.BREVO_SENDER_EMAIL || 'nepsehub2@gmail.com';
 
-  console.log(`[Resend] Sending reset email to: ${email} from: ${fromAddress}`);
+  console.log(`[Brevo] Sending reset email to: ${email}`);
 
-  const { data, error } = await resend.emails.send({
-    from: fromAddress,
-    to: email,
-    subject: 'Reset Your NEPSE HUB Password',
-    html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-        <h2 style="color: #10b981; text-align: center;">NEPSE HUB</h2>
-        <p>Hello,</p>
-        <p>We received a request to reset the password for your NEPSE HUB account. Click the button below to set a new password. This link will expire in 1 hour.</p>
-        <div style="text-align: center; margin: 30px 0;">
-          <a href="${resetUrl}" style="background-color: #10b981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Reset Password</a>
+  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+    method: 'POST',
+    headers: {
+      'api-key': process.env.BREVO_API_KEY,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
+    body: JSON.stringify({
+      sender: { name: senderName, email: senderEmail },
+      to: [{ email }],
+      subject: 'Reset Your NEPSE HUB Password',
+      htmlContent: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+          <h2 style="color: #10b981; text-align: center;">NEPSE HUB</h2>
+          <p>Hello,</p>
+          <p>We received a request to reset the password for your NEPSE HUB account. Click the button below to set a new password. This link will expire in 1 hour.</p>
+          <div style="text-align: center; margin: 30px 0;">
+            <a href="${resetUrl}" style="background-color: #10b981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Reset Password</a>
+          </div>
+          <p style="color: #64748b; font-size: 13px;">If you did not request a password reset, please ignore this email.</p>
+          <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+          <p style="color: #94a3b8; font-size: 11px; text-align: center;">NEPSE HUB &copy; 2026. All rights reserved.</p>
         </div>
-        <p style="color: #64748b; font-size: 13px;">If you did not request a password reset, please ignore this email.</p>
-        <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
-        <p style="color: #94a3b8; font-size: 11px; text-align: center;">NEPSE HUB &copy; 2026. All rights reserved.</p>
-      </div>
-    `,
+      `,
+    }),
   });
 
-  if (error) {
-    console.error('[Resend] Email send failed:', JSON.stringify(error));
-    throw new Error(`Email send failed: ${error.message || JSON.stringify(error)}`);
+  const result = await response.json();
+
+  if (!response.ok) {
+    console.error('[Brevo] Email send failed:', JSON.stringify(result));
+    throw new Error(`Brevo API error: ${result.message || JSON.stringify(result)}`);
   }
 
-  console.log(`[Resend] Email sent successfully. ID: ${data?.id}`);
+  console.log(`[Brevo] Email sent successfully. messageId: ${result.messageId}`);
 }
 
 // POST /api/auth/forgot-password
