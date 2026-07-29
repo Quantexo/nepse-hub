@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 const {
   generateUniqueCode,
   hashPassword,
@@ -299,30 +299,23 @@ router.get('/telegram-status', authMiddleware, async (req, res) => {
   }
 });
 
-// ── Email Reset Sender Helper ──
+// ── Email Reset Sender Helper (Resend) ──
 async function sendResetEmail(email, resetUrl) {
-  if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
+  if (!process.env.RESEND_API_KEY) {
+    // Fallback: print to console for local development
     console.log('\n==================================================');
     console.log('📬 [SIMULATED EMAIL] Password reset requested.');
     console.log(`To: ${email}`);
     console.log(`Reset URL: ${resetUrl}`);
     console.log('==================================================\n');
-    return; // Skip actual sending
+    return;
   }
 
-  const smtpPort = parseInt(process.env.SMTP_PORT || '465', 10);
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: smtpPort,
-    secure: smtpPort === 465, // true for SSL (port 465), false for STARTTLS (port 587)
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-  });
+  const resend = new Resend(process.env.RESEND_API_KEY);
+  const fromAddress = process.env.RESEND_FROM || 'NEPSE HUB <onboarding@resend.dev>';
 
-  const mailOptions = {
-    from: `"NEPSE HUB" <${process.env.SMTP_USER}>`,
+  await resend.emails.send({
+    from: fromAddress,
     to: email,
     subject: 'Reset Your NEPSE HUB Password',
     html: `
@@ -335,12 +328,10 @@ async function sendResetEmail(email, resetUrl) {
         </div>
         <p style="color: #64748b; font-size: 13px;">If you did not request a password reset, please ignore this email.</p>
         <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
-        <p style="color: #94a3b8; font-size: 11px; text-align: center;">NEPSE HUB © 2026. All rights reserved.</p>
+        <p style="color: #94a3b8; font-size: 11px; text-align: center;">NEPSE HUB &copy; 2026. All rights reserved.</p>
       </div>
     `,
-  };
-
-  await transporter.sendMail(mailOptions);
+  });
 }
 
 // POST /api/auth/forgot-password
