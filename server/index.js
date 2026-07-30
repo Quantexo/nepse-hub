@@ -71,13 +71,13 @@ app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
 app.use('/api/', apiLimiter);
 
-// Supabase Connection Setup - Use ONLY environment variables
+// Supabase Connection Setup - Use SUPABASE_SERVICE_ROLE_KEY to work with RLS enabled
 const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_PUB_KEY;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_PUB_KEY || process.env.SUPABASE_KEY;
 
 let supabase = null;
 if (!supabaseUrl || !supabaseKey) {
-    console.error('ERROR: SUPABASE_URL and SUPABASE_PUB_KEY must be set in environment variables');
+    console.error('ERROR: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_KEY) must be set in environment variables');
 } else {
     supabase = createClient(supabaseUrl, supabaseKey);
     app.locals.supabase = supabase;
