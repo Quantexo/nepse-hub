@@ -68,6 +68,7 @@ router.post('/register', async (req, res) => {
       email,
       username,
       accessToken,
+      refreshToken,
     });
   } catch (err) {
     console.error('Registration error:', err);
@@ -121,6 +122,7 @@ router.post('/login', async (req, res) => {
       email: user.email,
       username: user.username,
       accessToken,
+      refreshToken,
     });
   } catch (err) {
     console.error('Login error:', err);
@@ -128,7 +130,7 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// POST /api/auth/refresh - Refresh access token using refresh token from cookie
+// POST /api/auth/refresh - Refresh access token using refresh token from cookie or body
 router.post('/refresh', async (req, res) => {
   // Helper to extract cookie value
   let refreshToken = null;
@@ -141,7 +143,7 @@ router.post('/refresh', async (req, res) => {
     refreshToken = cookies.refreshToken;
   }
 
-  // Fallback to body during migration period if needed, otherwise cookie only
+  // Fallback to body for cross-site requests where third-party cookies are blocked
   if (!refreshToken) {
     refreshToken = req.body.refreshToken;
   }
@@ -171,10 +173,20 @@ router.post('/refresh', async (req, res) => {
     }
 
     const newAccessToken = generateAccessToken(user.id, user.code);
+    const newRefreshToken = generateRefreshToken(user.id, user.code);
+
+    res.cookie('refreshToken', newRefreshToken, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: '/api/auth'
+    });
 
     res.json({
       success: true,
       accessToken: newAccessToken,
+      refreshToken: newRefreshToken,
     });
   } catch (err) {
     console.error('Token refresh error:', err);
