@@ -28,13 +28,13 @@ router.post('/register', async (req, res) => {
     const { data: existingUser, error: checkError } = await supabase
       .from('users')
       .select('id')
-      .or(`email.eq.${email},username.eq.${username}`)
+      .eq('email', email)
       .maybeSingle();
 
     if (checkError) throw checkError;
 
     if (existingUser) {
-      return res.status(400).json({ error: 'Email or username already exists' });
+      return res.status(400).json({ error: 'Email already registered' });
     }
 
     const code = await generateUniqueCode(supabase);
