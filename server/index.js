@@ -378,6 +378,47 @@ app.use('/api/alive', aliveRoute);
 const symbolDataRoute = require('./symbolDataRoute');
 app.use('/api/symbol-data', symbolDataRoute);
 
+// --- Suggestion Box Routes ---
+// POST /api/suggestions — authenticated users submit an idea/feedback
+app.post('/api/suggestions', authMiddleware, async (req, res) => {
+    const { category, header, body, email } = req.body;
+
+    if (!header || typeof header !== 'string' || header.trim().length === 0) {
+        return res.status(400).json({ error: 'Suggestion title is required.' });
+    }
+    if (!body || typeof body !== 'string' || body.trim().length === 0) {
+        return res.status(400).json({ error: 'Suggestion description is required.' });
+    }
+    if (header.trim().length > 120) {
+        return res.status(400).json({ error: 'Title must be 120 characters or fewer.' });
+    }
+    if (body.trim().length > 2000) {
+        return res.status(400).json({ error: 'Description must be 2000 characters or fewer.' });
+    }
+
+    const allowedCategories = ['Feature Request', 'Bug Report', 'UI / UX', 'Data / Accuracy', 'Performance', 'Other'];
+    const safeCategory = allowedCategories.includes(category) ? category : 'Other';
+
+    try {
+        const { error } = await req.app.locals.supabase
+            .from('suggestions')
+            .insert({
+                user_id:  req.userId,
+                usercode: req.userCode || null,
+                email:    email || null,
+                category: safeCategory,
+                header:   header.trim(),
+                body:     body.trim(),
+            });
+
+        if (error) throw error;
+        res.status(201).json({ success: true, message: 'Suggestion submitted successfully.' });
+    } catch (err) {
+        console.error('Suggestion insert error:', err.message);
+        res.status(500).json({ error: 'Failed to save suggestion. Please try again.' });
+    }
+});
+
 // --- Global Error Handler Middleware ---
 app.use((err, req, res, next) => {
     console.error(`[Global Error] ${req.method} ${req.url}:`, err);
