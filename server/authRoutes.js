@@ -10,6 +10,7 @@ const {
   verifyRefreshToken,
 } = require('./auth-utils');
 const authMiddleware = require('./auth-middleware');
+const { sendTelegramMessage } = require('./telegramBot');
 
 // POST /api/auth/register - Create new user with auto-generated code
 router.post('/register', async (req, res) => {
@@ -311,13 +312,13 @@ router.get('/telegram-status', authMiddleware, async (req, res) => {
 });
 
 // ── Email Reset Sender Helper (Brevo HTTPS API — no SMTP port needed) ──
-async function sendResetEmail(email, resetUrl) {
+async function sendResetCodeEmail(email, code) {
   if (!process.env.BREVO_API_KEY) {
     // Fallback: print to console for local development
     console.log('\n==================================================');
     console.log('📬 [SIMULATED EMAIL — BREVO_API_KEY not set]');
     console.log(`To: ${email}`);
-    console.log(`Reset URL: ${resetUrl}`);
+    console.log(`Verification Code: ${code}`);
     console.log('==================================================\n');
     return;
   }
@@ -325,7 +326,7 @@ async function sendResetEmail(email, resetUrl) {
   const senderName = process.env.BREVO_SENDER_NAME || 'NEPSE HUB';
   const senderEmail = process.env.BREVO_SENDER_EMAIL || 'nepsehub2@gmail.com';
 
-  console.log(`[Brevo] Sending reset email to: ${email}`);
+  console.log(`[Brevo] Sending password reset code email to: ${email}`);
 
   const response = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
@@ -337,16 +338,16 @@ async function sendResetEmail(email, resetUrl) {
     body: JSON.stringify({
       sender: { name: senderName, email: senderEmail },
       to: [{ email }],
-      subject: 'Reset Your NEPSE HUB Password',
+      subject: 'NEPSE HUB - Password Reset Verification Code',
       htmlContent: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
           <h2 style="color: #10b981; text-align: center;">NEPSE HUB</h2>
           <p>Hello,</p>
-          <p>We received a request to reset the password for your NEPSE HUB account. Click the button below to set a new password. This link will expire in 1 hour.</p>
+          <p>We received a request to reset the password for your NEPSE HUB account. Your password reset verification code is:</p>
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${resetUrl}" style="background-color: #10b981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Reset Password</a>
+            <span style="background-color: #f1f5f9; color: #0f172a; padding: 12px 28px; font-size: 28px; font-weight: bold; letter-spacing: 4px; border-radius: 8px; border: 1px solid #cbd5e1; display: inline-block;">${code}</span>
           </div>
-          <p style="color: #64748b; font-size: 13px;">If you did not request a password reset, please ignore this email.</p>
+          <p style="color: #64748b; font-size: 13px;">This code will expire in 15 minutes. If you did not request a password reset, please ignore this email.</p>
           <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
           <p style="color: #94a3b8; font-size: 11px; text-align: center;">NEPSE HUB &copy; 2026. All rights reserved.</p>
         </div>
@@ -376,7 +377,7 @@ router.post('/forgot-password', async (req, res) => {
   try {
     const { data: user, error: findError } = await supabase
       .from('users')
-      .select('id, email')
+      .select('id, email, telegram_chat_id')
       .eq('email', email.trim().toLowerCase())
       .maybeSingle();
 
@@ -384,28 +385,43 @@ router.post('/forgot-password', async (req, res) => {
 
     // Standard security: don't leak account existence
     if (!user) {
-      return res.json({ success: true, message: 'If the email exists, a reset link has been sent.' });
+      return res.json({
+        success: true,
+        message: 'If the email exists, a password reset code has been sent.',
+      });
     }
 
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    const resetTokenExpiry = new Date(Date.now() + 3600000); // 1 hour
+    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const resetTokenExpiry = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
     const { error: updateError } = await supabase
       .from('users')
       .update({
-        reset_token: resetToken,
+        reset_token: resetCode,
         reset_token_expiry: resetTokenExpiry.toISOString(),
       })
       .eq('id', user.id);
 
     if (updateError) throw updateError;
 
-    const origin = req.headers.origin || 'http://localhost:5500';
-    const resetUrl = `${origin}/pages/reset-password.html?token=${resetToken}`;
+    const isTelegramLinked = !!(user.telegram_chat_id && String(user.telegram_chat_id).trim());
 
-    await sendResetEmail(user.email, resetUrl);
-
-    res.json({ success: true, message: 'If the email exists, a reset link has been sent.' });
+    if (isTelegramLinked) {
+      const messageText = `🔑 *NEPSE HUB Password Reset*\n\nYour 6-digit verification code is: *${resetCode}*\n\nThis code will expire in 15 minutes. Do not share this code with anyone.`;
+      await sendTelegramMessage(user.telegram_chat_id, messageText);
+      return res.json({
+        success: true,
+        channel: 'telegram',
+        message: 'Verification code sent to your linked Telegram account.',
+      });
+    } else {
+      await sendResetCodeEmail(user.email, resetCode);
+      return res.json({
+        success: true,
+        channel: 'email',
+        message: 'Verification code sent to your email address.',
+      });
+    }
   } catch (err) {
     console.error('Forgot password error:', err);
     res.status(500).json({ error: 'Failed to process password reset request' });
@@ -414,11 +430,11 @@ router.post('/forgot-password', async (req, res) => {
 
 // POST /api/auth/reset-password
 router.post('/reset-password', async (req, res) => {
-  const { token, password } = req.body;
+  const { code, password, email } = req.body;
   const supabase = req.app.locals.supabase;
 
-  if (!token || !password) {
-    return res.status(400).json({ error: 'Token and new password are required' });
+  if (!code || !password) {
+    return res.status(400).json({ error: 'Verification code and new password are required' });
   }
 
   if (password.length < 8) {
@@ -426,22 +442,27 @@ router.post('/reset-password', async (req, res) => {
   }
 
   try {
-    const { data: user, error: findError } = await supabase
+    let query = supabase
       .from('users')
       .select('id, reset_token_expiry')
-      .eq('reset_token', token)
-      .maybeSingle();
+      .eq('reset_token', String(code).trim());
+
+    if (email && typeof email === 'string' && email.trim()) {
+      query = query.eq('email', email.trim().toLowerCase());
+    }
+
+    const { data: user, error: findError } = await query.maybeSingle();
 
     if (findError) throw findError;
 
     if (!user) {
-      return res.status(400).json({ error: 'Invalid or expired password reset token' });
+      return res.status(400).json({ error: 'Invalid verification code' });
     }
 
     const now = new Date();
     const expiry = new Date(user.reset_token_expiry);
     if (now > expiry) {
-      return res.status(400).json({ error: 'Password reset token has expired' });
+      return res.status(400).json({ error: 'Verification code has expired. Please request a new code.' });
     }
 
     const passwordHash = await hashPassword(password);
