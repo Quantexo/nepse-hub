@@ -357,6 +357,21 @@ app.put('/api/notifications/:id/mark-read', authMiddleware, async (req, res) => 
     }
 });
 
+// --- Bulk clear ALL notifications for the user ---
+app.delete('/api/notifications', authMiddleware, async (req, res) => {
+    try {
+        const { error } = await req.app.locals.supabase
+            .from('notifications')
+            .delete()
+            .eq('user_id', req.userId);
+        if (error) throw error;
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Notifications bulk delete error:', err.message);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 app.delete('/api/notifications/:id', authMiddleware, async (req, res) => {
     const { id } = req.params;
     try {
