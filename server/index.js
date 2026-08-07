@@ -85,6 +85,10 @@ if (!supabaseUrl || !supabaseKey) {
 const authRoutes = require('./authRoutes');
 app.use('/api/auth', authRoutes);
 
+// --- Settings Routes ---
+const settingsRoutes = require('./settingsRoutes');
+app.use('/api/settings', settingsRoutes);
+
 // --- Import Middleware ---
 const authMiddleware = require('./auth-middleware');
 const {
