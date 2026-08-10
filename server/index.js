@@ -29,7 +29,8 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
         'http://localhost:5500',
         'http://localhost:5600',
         'https://nepse-hub-backend.vercel.app',
-        'https://nepsehub.vercel.app/'
+        'https://nepsehub.vercel.app/',
+        'https://nepsehub-admin.onrender.com/'
     ];
 
 app.use(cors({
