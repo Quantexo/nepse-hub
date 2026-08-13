@@ -39,9 +39,15 @@ router.get('/', authMiddleware, async (req, res) => {
 
     if (error) throw error;
 
+    const prefs = userSettings ? userSettings.preferences : null;
+    if (prefs) {
+      delete prefs['notif-market'];
+      delete prefs['notif-circuit'];
+    }
+
     res.json({
       success: true,
-      settings: userSettings ? userSettings.preferences : null
+      settings: prefs
     });
   } catch (err) {
     console.error('Fetch user settings error:', err.message);
@@ -60,6 +66,10 @@ router.put('/', authMiddleware, async (req, res) => {
   if (!preferences || typeof preferences !== 'object') {
     return res.status(400).json({ error: 'Invalid settings payload. Expected "preferences" object.' });
   }
+
+  // Remove obsolete notification toggles
+  delete preferences['notif-market'];
+  delete preferences['notif-circuit'];
 
   try {
     const payload = {
