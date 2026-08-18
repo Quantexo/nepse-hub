@@ -90,6 +90,10 @@ app.use('/api/auth', authRoutes);
 const settingsRoutes = require('./settingsRoutes');
 app.use('/api/settings', settingsRoutes);
 
+// --- Account Management & Data Export Routes ---
+const accountRoutes = require('./accountRoutes');
+app.use('/api/account', accountRoutes);
+
 // --- Import Middleware ---
 const authMiddleware = require('./auth-middleware');
 const {
