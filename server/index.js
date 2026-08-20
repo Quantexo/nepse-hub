@@ -225,6 +225,36 @@ app.delete('/api/transactions/:id', authMiddleware, async (req, res) => {
     }
 });
 
+app.put('/api/transactions/:id', authMiddleware, async (req, res) => {
+    const { id } = req.params;
+    const {
+        symbol, type, quantity, price, source,
+        stop_loss, broker_commission, sebon_fee, dp_charge,
+        total_amount, wacc, transaction_date
+    } = req.body;
+    try {
+        const { data, error } = await req.app.locals.supabase
+            .from('transactions')
+            .update({
+                symbol, type, quantity, price, source,
+                stop_loss, broker_commission, sebon_fee, dp_charge,
+                total_amount, wacc, transaction_date
+            })
+            .eq('id', id)
+            .eq('user_id', req.userId)
+            .select();
+        if (error) throw error;
+        if (!data || data.length === 0) {
+            return res.status(404).json({ success: false, error: 'Transaction not found' });
+        }
+        if (req.app.locals.supabase && req.auth?.refreshTransactions) req.auth.refreshTransactions();
+        res.json({ success: true, data: data[0] });
+    } catch (err) {
+        console.error('Transaction update error:', err.message);
+        res.status(500).json({ success: false, error: 'Failed to update transaction' });
+    }
+});
+
 // --- Trade Plans Routes (Protected) ---
 app.get('/api/trade-plans', authMiddleware, async (req, res) => {
     try {
