@@ -324,7 +324,7 @@ async function sendResetCodeEmail(email, code) {
   }
 
   const senderName = process.env.BREVO_SENDER_NAME || 'NEPSTRAT';
-  const senderEmail = process.env.BREVO_SENDER_EMAIL || 'nepstrat2@gmail.com';
+  const senderEmail = process.env.BREVO_SENDER_EMAIL || 'nepstrat@gmail.com';
 
   console.log(`[Brevo] Sending password reset code email to: ${email}`);
 
