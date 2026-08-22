@@ -14,7 +14,7 @@ router.get('/', (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    message: 'NEPSE Hub backend is running'
+    message: 'NEPSTRAT backend is running'
   });
 });
 

@@ -138,7 +138,7 @@ ${losersText}
 ⚡ *Circuit Hits:*
 ${circuitText}
 
-_Sent by NEPSE HUB · Manage notifications in your profile settings_`;
+_Sent by NEPSTRAT · Manage notifications in your profile settings_`;
 }
 
 function formatEmailHtml({ nepseIndex, topGainers, topLosers, upperCircuit, lowerCircuit }, username) {
@@ -201,7 +201,7 @@ function formatEmailHtml({ nepseIndex, topGainers, topLosers, upperCircuit, lowe
       }
 
       <p style="color:#475569;font-size:12px;text-align:center;margin:0">
-        Sent by <strong style="color:#6366f1">NEPSE HUB</strong> · 
+        Sent by <strong style="color:#6366f1">NEPSTRAT</strong> · 
         You can manage your notification preferences in your profile settings.
       </p>
     </td></tr>
@@ -235,7 +235,7 @@ async function sendEmail(to, subject, html) {
 
   try {
     await transporter.sendMail({
-      from: `"NEPSE HUB" <${process.env.SMTP_USER}>`,
+      from: `"NEPSTRAT" <${process.env.SMTP_USER}>`,
       to,
       subject,
       html,

@@ -138,7 +138,7 @@ router.get('/export', authMiddleware, async (req, res) => {
         return [header, ...rows].join('\n') + '\n';
       };
 
-      let csv = `\uFEFFNEPSE HUB USER DATA EXPORT\n`;
+      let csv = `\uFEFFNEPSTRAT USER DATA EXPORT\n`;
       csv += `Exported At: ${exportData.exported_at}\n`;
       csv += `User: ${exportData.user.username || ''} (${exportData.user.code || ''}) | Email: ${exportData.user.email || ''}\n\n`;
 

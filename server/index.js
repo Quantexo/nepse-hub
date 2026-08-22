@@ -486,7 +486,7 @@ process.on('unhandledRejection', (reason) => {
 
 if (require.main === module) {
     app.listen(port, () => {
-        console.log(`NEPSE Hub Backend running at http://localhost:${port}`);
+        console.log(`NEPSTRAT Backend running at http://localhost:${port}`);
         if (supabase) {
             startCronJobs(supabase);
             startBot(supabase);

@@ -1,7 +1,7 @@
 /**
  * telegramBot.js
  * Polls the Telegram Bot API for new messages, handles /start <code>
- * to link a user's Telegram chat_id to their NEPSE HUB account.
+ * to link a user's Telegram chat_id to their NEPSTRAT account.
  */
 
 const https = require('https');
@@ -140,7 +140,7 @@ async function handlePortfolioCommand(chatId) {
   if (userError || !user) {
     await sendMessage(
       chatId,
-      '👋 Welcome to *NEPSE HUB Bot*!\n\nIt looks like your Telegram account is not linked to your NEPSE HUB account yet.\n\nTo link your account, go to *Profile → Notification Settings* in the app and follow the Telegram connect instructions.'
+      '👋 Welcome to *NEPSTRAT Bot*!\n\nIt looks like your Telegram account is not linked to your NEPSTRAT account yet.\n\nTo link your account, go to *Profile → Notification Settings* in the app and follow the Telegram connect instructions.'
     );
     return;
   }
@@ -172,7 +172,7 @@ async function handlePortfolioCommand(chatId) {
   if (holdings.length === 0) {
     await sendMessage(
       chatId,
-      '📊 *Your Portfolio Summary*\n━━━━━━━━━━━━━━━━━━\n\nℹ️ You don\'t have any active holdings in your portfolio.\nUse the NEPSE HUB web application to add buy transactions and track them here!'
+      '📊 *Your Portfolio Summary*\n━━━━━━━━━━━━━━━━━━\n\nℹ️ You don\'t have any active holdings in your portfolio.\nUse the NEPSTRAT web application to add buy transactions and track them here!'
     );
     return;
   }
@@ -251,7 +251,7 @@ async function handleWatchlistCommand(chatId) {
   if (userError || !user) {
     await sendMessage(
       chatId,
-      '👋 Welcome to *NEPSE HUB Bot*!\n\nIt looks like your Telegram account is not linked to your NEPSE HUB account yet.\n\nTo link your account, go to *Profile → Notification Settings* in the app and follow the Telegram connect instructions.'
+      '👋 Welcome to *NEPSTRAT Bot*!\n\nIt looks like your Telegram account is not linked to your NEPSTRAT account yet.\n\nTo link your account, go to *Profile → Notification Settings* in the app and follow the Telegram connect instructions.'
     );
     return;
   }
@@ -282,7 +282,7 @@ async function handleWatchlistCommand(chatId) {
   if (watchlistItems.length === 0) {
     await sendMessage(
       chatId,
-      '👀 *Your Watchlist*\n━━━━━━━━━━━━━━━━━━\n\nℹ️ Your watchlist is currently empty.\nUse the NEPSE HUB web application to add stock symbols and targets to your watchlist!'
+      '👀 *Your Watchlist*\n━━━━━━━━━━━━━━━━━━\n\nℹ️ Your watchlist is currently empty.\nUse the NEPSTRAT web application to add stock symbols and targets to your watchlist!'
     );
     return;
   }
@@ -335,15 +335,15 @@ async function handleWatchlistCommand(chatId) {
 }
 
 async function handleHelpCommand(chatId) {
-  const helpText = `🤖 *NEPSE HUB Bot Help Menu*
+  const helpText = `🤖 *NEPSTRAT Bot Help Menu*
 ━━━━━━━━━━━━━━━━━━
 Here are the commands you can use:
 
 📊 /portfolio — View your current holdings, average cost, LTP, P&L summary, and top gainers/losers.
 👀 /watchlist — View your watchlist symbols, target prices, and live hit/distance statuses.
-👋 /start — Show instructions to link your Telegram account to your NEPSE HUB account.
+👋 /start — Show instructions to link your Telegram account to your NEPSTRAT account.
 
-Need any help? Visit the NEPSE HUB platform to update your profile, settings, and track all your trades.`;
+Need any help? Visit the NEPSTRAT platform to update your profile, settings, and track all your trades.`;
 
   await sendMessage(chatId, helpText);
 }
@@ -366,12 +366,12 @@ async function handleUpdate(update) {
     if (!userCode) {
       await sendMessage(
         chatId,
-        '👋 Welcome to *NEPSE HUB Bot*!\n\nTo link your account, go to *Profile → Notification Settings* in the app and follow the Telegram connect instructions.\n\nType /help to see all available commands.'
+        '👋 Welcome to *NEPSTRAT Bot*!\n\nTo link your account, go to *Profile → Notification Settings* in the app and follow the Telegram connect instructions.\n\nType /help to see all available commands.'
       );
       return;
     }
 
-    // Find user by their NEPSE HUB code
+    // Find user by their NEPSTRAT code
     const { data: user, error } = await supabase
       .from('users')
       .select('id, username')
@@ -379,7 +379,7 @@ async function handleUpdate(update) {
       .maybeSingle();
 
     if (error || !user) {
-      await sendMessage(chatId, '❌ Invalid code. Please check your NEPSE HUB account code and try again.');
+      await sendMessage(chatId, '❌ Invalid code. Please check your NEPSTRAT account code and try again.');
       return;
     }
 

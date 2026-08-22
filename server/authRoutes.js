@@ -323,8 +323,8 @@ async function sendResetCodeEmail(email, code) {
     return;
   }
 
-  const senderName = process.env.BREVO_SENDER_NAME || 'NEPSE HUB';
-  const senderEmail = process.env.BREVO_SENDER_EMAIL || 'nepsehub2@gmail.com';
+  const senderName = process.env.BREVO_SENDER_NAME || 'NEPSTRAT';
+  const senderEmail = process.env.BREVO_SENDER_EMAIL || 'nepstrat2@gmail.com';
 
   console.log(`[Brevo] Sending password reset code email to: ${email}`);
 
@@ -338,18 +338,18 @@ async function sendResetCodeEmail(email, code) {
     body: JSON.stringify({
       sender: { name: senderName, email: senderEmail },
       to: [{ email }],
-      subject: 'NEPSE HUB - Password Reset Verification Code',
+      subject: 'NEPSTRAT - Password Reset Verification Code',
       htmlContent: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-          <h2 style="color: #10b981; text-align: center;">NEPSE HUB</h2>
+          <h2 style="color: #10b981; text-align: center;">NEPSTRAT</h2>
           <p>Hello,</p>
-          <p>We received a request to reset the password for your NEPSE HUB account. Your password reset verification code is:</p>
+          <p>We received a request to reset the password for your NEPSTRAT account. Your password reset verification code is:</p>
           <div style="text-align: center; margin: 30px 0;">
             <span style="background-color: #f1f5f9; color: #0f172a; padding: 12px 28px; font-size: 28px; font-weight: bold; letter-spacing: 4px; border-radius: 8px; border: 1px solid #cbd5e1; display: inline-block;">${code}</span>
           </div>
           <p style="color: #64748b; font-size: 13px;">This code will expire in 15 minutes. If you did not request a password reset, please ignore this email.</p>
           <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
-          <p style="color: #94a3b8; font-size: 11px; text-align: center;">NEPSE HUB &copy; 2026. All rights reserved.</p>
+          <p style="color: #94a3b8; font-size: 11px; text-align: center;">NEPSTRAT &copy; 2026. All rights reserved.</p>
         </div>
       `,
     }),
@@ -407,7 +407,7 @@ router.post('/forgot-password', async (req, res) => {
     const isTelegramLinked = !!(user.telegram_chat_id && String(user.telegram_chat_id).trim());
 
     if (isTelegramLinked) {
-      const messageText = `🔑 *NEPSE HUB Password Reset*\n\nYour 6-digit verification code is: *${resetCode}*\n\nThis code will expire in 15 minutes. Do not share this code with anyone.`;
+      const messageText = `🔑 *NEPSTRAT Password Reset*\n\nYour 6-digit verification code is: *${resetCode}*\n\nThis code will expire in 15 minutes. Do not share this code with anyone.`;
       await sendTelegramMessage(user.telegram_chat_id, messageText);
       return res.json({
         success: true,
