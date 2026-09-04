@@ -230,16 +230,20 @@ app.put('/api/transactions/:id', authMiddleware, async (req, res) => {
     const {
         symbol, type, quantity, price, source,
         stop_loss, broker_commission, sebon_fee, dp_charge,
-        total_amount, wacc, transaction_date
+        total_amount, wacc, transaction_date, vault_id, notes
     } = req.body;
     try {
+        const updatePayload = {
+            symbol, type, quantity, price, source,
+            stop_loss, broker_commission, sebon_fee, dp_charge,
+            total_amount, wacc, transaction_date
+        };
+        if (vault_id !== undefined) updatePayload.vault_id = vault_id;
+        if (notes !== undefined) updatePayload.notes = notes;
+
         const { data, error } = await req.app.locals.supabase
             .from('transactions')
-            .update({
-                symbol, type, quantity, price, source,
-                stop_loss, broker_commission, sebon_fee, dp_charge,
-                total_amount, wacc, transaction_date
-            })
+            .update(updatePayload)
             .eq('id', id)
             .eq('user_id', req.userId)
             .select();
@@ -428,6 +432,153 @@ app.use('/api/alive', aliveRoute);
 
 const symbolDataRoute = require('./symbolDataRoute');
 app.use('/api/symbol-data', symbolDataRoute);
+
+// --- Vault Routes (Protected) ---
+// GET all vaults for current user
+app.get('/api/vaults', authMiddleware, async (req, res) => {
+    try {
+        const { data, error } = await req.app.locals.supabase
+            .from('vaults')
+            .select('*')
+            .eq('user_id', req.userId)
+            .order('created_at', { ascending: true });
+        if (error) throw error;
+        res.json(data || []);
+    } catch (err) {
+        console.error('Vaults fetch error:', err.message);
+        res.status(500).json({ error: 'Failed to fetch vaults' });
+    }
+});
+
+// GET single vault by id
+app.get('/api/vaults/:id', authMiddleware, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const { data, error } = await req.app.locals.supabase
+            .from('vaults')
+            .select('*')
+            .eq('id', id)
+            .eq('user_id', req.userId)
+            .maybeSingle();
+        if (error) throw error;
+        if (!data) return res.status(404).json({ error: 'Vault not found' });
+        res.json(data);
+    } catch (err) {
+        console.error('Vault fetch error:', err.message);
+        res.status(500).json({ error: 'Failed to fetch vault' });
+    }
+});
+
+// POST create a new vault
+app.post('/api/vaults', authMiddleware, async (req, res) => {
+    const { name, boid = '', broker = '', description = '', color = '#6366f1', is_default = false } = req.body;
+    if (!name || typeof name !== 'string' || !name.trim()) {
+        return res.status(400).json({ error: 'Vault name is required' });
+    }
+    try {
+        // If this is marked as default, clear existing defaults first
+        if (is_default) {
+            await req.app.locals.supabase
+                .from('vaults')
+                .update({ is_default: false })
+                .eq('user_id', req.userId)
+                .eq('is_default', true);
+        }
+        const { data, error } = await req.app.locals.supabase
+            .from('vaults')
+            .insert([{ user_id: req.userId, name: name.trim(), boid, broker, description, color, is_default }])
+            .select()
+            .single();
+        if (error) throw error;
+        res.status(201).json(data);
+    } catch (err) {
+        console.error('Vault create error:', err.message);
+        res.status(500).json({ error: 'Failed to create vault' });
+    }
+});
+
+// PUT update a vault
+app.put('/api/vaults/:id', authMiddleware, async (req, res) => {
+    const { id } = req.params;
+    const { name, boid, broker, description, color, is_default } = req.body;
+    try {
+        // If marking as default, unset others first
+        if (is_default) {
+            await req.app.locals.supabase
+                .from('vaults')
+                .update({ is_default: false })
+                .eq('user_id', req.userId)
+                .eq('is_default', true)
+                .neq('id', id);
+        }
+        const updatePayload = {};
+        if (name !== undefined) updatePayload.name = name.trim();
+        if (boid !== undefined) updatePayload.boid = boid;
+        if (broker !== undefined) updatePayload.broker = broker;
+        if (description !== undefined) updatePayload.description = description;
+        if (color !== undefined) updatePayload.color = color;
+        if (is_default !== undefined) updatePayload.is_default = is_default;
+
+        const { data, error } = await req.app.locals.supabase
+            .from('vaults')
+            .update(updatePayload)
+            .eq('id', id)
+            .eq('user_id', req.userId)
+            .select()
+            .single();
+        if (error) throw error;
+        if (!data) return res.status(404).json({ error: 'Vault not found' });
+        res.json(data);
+    } catch (err) {
+        console.error('Vault update error:', err.message);
+        res.status(500).json({ error: 'Failed to update vault' });
+    }
+});
+
+// DELETE a vault (cannot delete the default vault)
+app.delete('/api/vaults/:id', authMiddleware, async (req, res) => {
+    const { id } = req.params;
+    try {
+        // Prevent deleting the default vault
+        const { data: vault, error: fetchErr } = await req.app.locals.supabase
+            .from('vaults')
+            .select('id, is_default')
+            .eq('id', id)
+            .eq('user_id', req.userId)
+            .maybeSingle();
+        if (fetchErr) throw fetchErr;
+        if (!vault) return res.status(404).json({ error: 'Vault not found' });
+        if (vault.is_default) return res.status(400).json({ error: 'Cannot delete the default vault' });
+
+        // Reassign any transactions in this vault to the user's default vault
+        const { data: defaultVault } = await req.app.locals.supabase
+            .from('vaults')
+            .select('id')
+            .eq('user_id', req.userId)
+            .eq('is_default', true)
+            .maybeSingle();
+
+        if (defaultVault) {
+            await req.app.locals.supabase
+                .from('transactions')
+                .update({ vault_id: defaultVault.id })
+                .eq('vault_id', id)
+                .eq('user_id', req.userId);
+        }
+
+        const { error: deleteErr } = await req.app.locals.supabase
+            .from('vaults')
+            .delete()
+            .eq('id', id)
+            .eq('user_id', req.userId);
+        if (deleteErr) throw deleteErr;
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Vault delete error:', err.message);
+        res.status(500).json({ error: 'Failed to delete vault' });
+    }
+});
 
 // --- Suggestion Box Routes ---
 // POST /api/suggestions — authenticated users submit an idea/feedback
