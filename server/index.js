@@ -35,21 +35,14 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
 
 app.use(cors({
     origin: function (origin, callback) {
-        // Dev phase: allow all origins
-        callback(null, origin || '*');
+        // Allow requests with no origin (like mobile apps, curl, server-to-server)
+        if (!origin || allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+            return callback(null, true);
+        }
+        return callback(null, true); // Fallback: allow all origins while supporting credentialed headers
     },
-    credentials: false  // Must be false when using wildcard/all-origins; set to true only in production with explicit origin list
+    credentials: true
 }));
-
-// Explicit CORS headers as a safety net for all routes (preflight + actual requests)
-app.use((req, res, next) => {
-    res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
-    res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization');
-    res.setHeader('Access-Control-Max-Age', '86400');
-    if (req.method === 'OPTIONS') return res.sendStatus(200);
-    next();
-});
 
 // --- Request Body Payload Limit ---
 app.use(express.json({ limit: '100kb' }));
