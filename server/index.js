@@ -26,7 +26,6 @@ app.use(helmet({
 const allowedOrigins = process.env.ALLOWED_ORIGINS 
     ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
     : [
-        'http://localhost:5500',
         'http://localhost:5600',
         'https://nepse-hub-backend.vercel.app',
         'https://nepstrat.vercel.app/',
@@ -35,11 +34,12 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
 
 app.use(cors({
     origin: function (origin, callback) {
-        // Allow requests with no origin (like mobile apps, curl, server-to-server)
-        if (!origin || allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+        // Allow requests with no origin (mobile apps, curl, server-to-server)
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
             return callback(null, true);
         }
-        return callback(null, true); // Fallback: allow all origins while supporting credentialed headers
+        return callback(new Error(`CORS: Origin '${origin}' is not allowed`), false);
     },
     credentials: true
 }));
@@ -56,6 +56,15 @@ const authLimiter = rateLimit({
     message: { error: 'Too many authentication attempts from this IP. Please try again after 15 minutes.' }
 });
 
+// Stricter limiter for password-reset flow — prevents brute-force of 6-digit codes
+const passwordResetLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour window
+    max: 5, // 5 attempts per IP per hour
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many password reset attempts from this IP. Please try again in 1 hour.' }
+});
+
 const apiLimiter = rateLimit({
     windowMs: 60 * 1000, // 1 minute
     max: 200, // Limit each IP to 200 requests per minute
@@ -67,6 +76,8 @@ const apiLimiter = rateLimit({
 // Apply rate limiters
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
+app.use('/api/auth/forgot-password', passwordResetLimiter);
+app.use('/api/auth/reset-password', passwordResetLimiter);
 app.use('/api/', apiLimiter);
 
 // Supabase Connection Setup - Use SUPABASE_SERVICE_ROLE_KEY to work with RLS enabled
