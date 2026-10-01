@@ -433,6 +433,10 @@ router.post('/reset-password', async (req, res) => {
   const { code, password, email } = req.body;
   const supabase = req.app.locals.supabase;
 
+  if (!email || typeof email !== 'string' || !email.trim()) {
+    return res.status(400).json({ error: 'Email address is required' });
+  }
+
   if (!code || !password) {
     return res.status(400).json({ error: 'Verification code and new password are required' });
   }
@@ -442,21 +446,20 @@ router.post('/reset-password', async (req, res) => {
   }
 
   try {
-    let query = supabase
+    const normalizedEmail = email.trim().toLowerCase();
+    const cleanCode = String(code).trim();
+
+    const { data: user, error: findError } = await supabase
       .from('users')
       .select('id, reset_token_expiry')
-      .eq('reset_token', String(code).trim());
-
-    if (email && typeof email === 'string' && email.trim()) {
-      query = query.eq('email', email.trim().toLowerCase());
-    }
-
-    const { data: user, error: findError } = await query.maybeSingle();
+      .eq('email', normalizedEmail)
+      .eq('reset_token', cleanCode)
+      .maybeSingle();
 
     if (findError) throw findError;
 
     if (!user) {
-      return res.status(400).json({ error: 'Invalid verification code' });
+      return res.status(400).json({ error: 'Invalid verification code or email' });
     }
 
     const now = new Date();
