@@ -23,20 +23,27 @@ app.use(helmet({
 }));
 
 // --- CORS Configuration ---
-const allowedOrigins = process.env.ALLOWED_ORIGINS 
+const rawOrigins = process.env.ALLOWED_ORIGINS 
     ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
     : [
         'http://localhost:5600',
+        'http://localhost:5500',
+        'http://127.0.0.1:5600',
+        'http://127.0.0.1:5500',
         'https://nepse-hub-backend.vercel.app',
-        'https://nepstrat.vercel.app/',
+        'https://nepstrat.vercel.app',
         'https://nepstrat-admin.vercel.app'
     ];
+
+// Normalize origins by stripping trailing slashes
+const allowedOrigins = rawOrigins.map(o => o.replace(/\/+$/, ''));
 
 app.use(cors({
     origin: function (origin, callback) {
         // Allow requests with no origin (mobile apps, curl, server-to-server)
         if (!origin) return callback(null, true);
-        if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+        const normalizedOrigin = origin.replace(/\/+$/, '');
+        if (allowedOrigins.includes('*') || allowedOrigins.includes(normalizedOrigin)) {
             return callback(null, true);
         }
         return callback(new Error(`CORS: Origin '${origin}' is not allowed`), false);
