@@ -165,7 +165,7 @@ router.post('/refresh', async (req, res) => {
   try {
     const { data: user, error: findError } = await supabase
       .from('users')
-      .select('id, code')
+      .select('id, code, plan')
       .eq('id', decoded.userId)
       .maybeSingle();
 
@@ -188,6 +188,7 @@ router.post('/refresh', async (req, res) => {
 
     res.json({
       success: true,
+      plan: user.plan || 'free',
       accessToken: newAccessToken,
       refreshToken: newRefreshToken,
     });
