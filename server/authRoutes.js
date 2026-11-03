@@ -43,8 +43,8 @@ router.post('/register', async (req, res) => {
 
     const { data: newUser, error: insertError } = await supabase
       .from('users')
-      .insert([{ code, email, username, password_hash: passwordHash }])
-      .select('id')
+      .insert([{ code, email, username, password_hash: passwordHash, plan: 'free' }])
+      .select('id, plan')
       .single();
 
     if (insertError) throw insertError;
@@ -68,6 +68,7 @@ router.post('/register', async (req, res) => {
       code,
       email,
       username,
+      plan: newUser.plan || 'free',
       accessToken,
       refreshToken,
     });
@@ -89,7 +90,7 @@ router.post('/login', async (req, res) => {
   try {
     const { data: user, error: findError } = await supabase
       .from('users')
-      .select('id, code, password_hash, email, username')
+      .select('id, code, password_hash, email, username, plan')
       .eq('code', code)
       .maybeSingle();
 
@@ -122,6 +123,7 @@ router.post('/login', async (req, res) => {
       code: user.code,
       email: user.email,
       username: user.username,
+      plan: user.plan || 'free',
       accessToken,
       refreshToken,
     });
@@ -213,7 +215,7 @@ router.get('/me', authMiddleware, async (req, res) => {
   try {
     const { data: user, error: findError } = await supabase
       .from('users')
-      .select('id, code, email, username, created_at')
+      .select('id, code, email, username, plan, plan_expires_at, created_at')
       .eq('id', req.userId)
       .maybeSingle();
 
@@ -229,6 +231,8 @@ router.get('/me', authMiddleware, async (req, res) => {
       code: user.code,
       email: user.email,
       username: user.username,
+      plan: user.plan || 'free',
+      planExpiresAt: user.plan_expires_at || null,
       createdAt: user.created_at,
     });
   } catch (err) {
@@ -484,6 +488,45 @@ router.post('/reset-password', async (req, res) => {
   } catch (err) {
     console.error('Reset password error:', err);
     res.status(500).json({ error: 'Failed to reset password' });
+  }
+});
+
+// PATCH /api/auth/plan - Admin-only: update a user's plan
+// Requires ADMIN_SECRET header matching env var ADMIN_SECRET
+router.patch('/plan', async (req, res) => {
+  const adminSecret = req.headers['x-admin-secret'];
+  if (!adminSecret || adminSecret !== process.env.ADMIN_SECRET) {
+    return res.status(403).json({ error: 'Forbidden: invalid admin secret' });
+  }
+
+  const { userId, plan, planExpiresAt } = req.body;
+  const supabase = req.app.locals.supabase;
+
+  const allowedPlans = ['free', 'premium', 'pro'];
+  if (!userId || !plan || !allowedPlans.includes(plan)) {
+    return res.status(400).json({ error: `userId and plan (${allowedPlans.join(' | ')}) are required` });
+  }
+
+  try {
+    const updatePayload = { plan };
+    if (planExpiresAt !== undefined) {
+      updatePayload.plan_expires_at = planExpiresAt || null;
+    }
+
+    const { data, error } = await supabase
+      .from('users')
+      .update(updatePayload)
+      .eq('id', userId)
+      .select('id, email, plan, plan_expires_at')
+      .single();
+
+    if (error) throw error;
+    if (!data) return res.status(404).json({ error: 'User not found' });
+
+    res.json({ success: true, user: data });
+  } catch (err) {
+    console.error('Plan update error:', err.message);
+    res.status(500).json({ error: 'Failed to update plan' });
   }
 });
 
